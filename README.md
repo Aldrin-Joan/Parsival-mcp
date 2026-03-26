@@ -15,8 +15,8 @@ Parsival is a FastMCP-based file parsing service that supports parsing of text, 
 
 1. Clone repo:
    ```bash
-   git clone <repo-url>
-   cd Parsival
+   git clone https://github.com/Aldrin-Joan/Parsival-mcp.git
+   cd Parsival-mcp
    ```
 
 2. Create python env:
