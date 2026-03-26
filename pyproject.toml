@@ -1,0 +1,31 @@
+[project]
+name = "parsival"
+version = "0.1.0"
+description = "FastMCP file parser system, Phase 0 foundation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[project.dependencies]
+fastmcp = "*"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+cachetools = "^5.3.0"
+structlog = "^24.0.0"
+python-magic = "^0.4.27"
+
+[project.optional-dependencies]
+testing = ["pytest>=7.0.0", "pytest-asyncio>=0.23.0", "ruff>=0.0.0", "mypy>=1.0"]
+
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "W", "C", "N", "Q", "T" ]
+
+[tool.mypy]
+python_version = 3.11
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-q"
