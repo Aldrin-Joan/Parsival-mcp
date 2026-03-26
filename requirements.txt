@@ -1,0 +1,13 @@
+fastmcp
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+cachetools>=5.3.0
+structlog>=24.0.0
+python-magic>=0.4.27
+pytest>=7.0.0
+pytest-asyncio>=0.23.0
+pytest-benchmark>=3.4.0
+ruff>=0.0.0
+mypy>=1.0
+pytest-cov>=4.0.0
+coverage>=7.0.0

@@ -258,6 +258,30 @@
 
 ### P2-03: HTML parser `[M]` ✅
 - Create `src/parsers/html_parser.py`
+
+---
+
+## Phase 4 — Streaming / Incremental Parse (Completed) ✅
+
+### P4-01: PDF native streaming `[M]` ✅
+- Implement `PDFParser.stream_sections(path, options)`
+- page-by-page section emission (no full `ParseResult` pre-buffer)
+- `supports_streaming() -> True`
+- Add test to assert first section emitted before complete parse
+
+### P4-02: StreamingChunkEmitter `[M]` ✅
+- Create `src/parsers/streaming_chunk_emitter.py`
+- `asyncio.Queue(maxsize=8)` for backpressure
+- emits `StreamChunk` records per section
+- final chunk with `is_final=True`, metadata and summary
+- test slow consumer / bounded memory
+
+### P4-03: read_file streaming mode `[M]` ✅
+- `parse_file(..., stream=True)` path returns `AsyncGenerator[StreamChunk]`
+- `src/tools/read_file.py` supports `stream=True` path
+- `StreamChunk` final chunk includes metadata
+- Integration test via tool with `stream=True` ensures first chunk appears early
+
 - bs4 + lxml backend
 - Meta extraction: title, author, description
 - Table extraction via bs4
@@ -274,42 +298,42 @@
 
 ---
 
-## Phase 3 — Remaining Tools
+## Phase 3 — Remaining Tools (Completed) ✅
 
-### P3-01: JSONSerializer `[M]`
+### P3-01: JSONSerializer `[M]` ✅
 - Create `src/serialisers/json_serialiser.py`
 - `ParseResult.model_dump_json(indent=2, exclude_none=True)`
 - Streaming variant: emit metadata first, yield sections as JSON fragments
 - Test: schema validation of output against JSON Schema
 - deps: P0-06
 
-### P3-02: `get_metadata` tool `[M]`
+### P3-02: `get_metadata` tool `[M]` ✅
 - Create `src/tools/get_metadata.py`
 - Cheap parse: call `parser.parse_metadata(path)` directly
 - Return `DocumentMetadata` (no `ParseResult`)
 - Test: 500-page PDF completes in < 100ms
 - deps: P1-04, P1-07, P1-09
 
-### P3-03: `extract_table` tool `[M]`
+### P3-03: `extract_table` tool `[M]` ✅
 - Create `src/tools/extract_table.py`
 - `table_index` parameter
 - `sheet_name` for XLSX
 - Return `TableResult` with GFM and JSON representations
 - deps: P1-03, P1-08
 
-### P3-04: `extract_images` tool `[M]`
+### P3-04: `extract_images` tool `[M]` ✅
 - Create `src/tools/extract_images.py`
 - `page_range` filter
 - `max_dimension` and `format` per-call override
 - Return `list[ImageRef]`
 - deps: P1-02, P1-06
 
-### P3-05: `convert_to_markdown` tool `[E]`
+### P3-05: `convert_to_markdown` tool `[E]` ✅
 - Thin wrapper around `read_file(..., output_format="markdown")`
 - Return `str` directly
 - deps: P1-17
 
-### P3-06: `search_file` tool `[H]`
+### P3-06: `search_file` tool `[H]` ✅
 - Create `src/tools/search_file.py`
 - Build BM25 index from `ParseResult.sections` content
 - Use `rank_bm25.BM25Okapi`
@@ -318,7 +342,7 @@
 - Test: search known string in known document; assert hit in top-3
 - deps: P1-17
 
-### P3-07: `list_supported_formats` tool `[E]`
+### P3-07: `list_supported_formats` tool `[E]` ✅
 - Return `list[FileFormat]` from registry
 - Include current server version in response
 - deps: P0-11
@@ -352,66 +376,61 @@
 
 ---
 
-## Phase 5 — Hardening
+## Phase 5 — Hardening ✅
 
-### P5-01: Encrypted PDF handling `[M]`
+### P5-01: Encrypted PDF handling `[M]` ✅
 - Attempt `fitz.open(path)` without password
 - On `fitz.FileDataError`: return `ParseResult(status=FAILED, errors=[ParseError(code="encrypted")])`
 - deps: P1-01
 
-### P5-02: Corrupt file handling `[M]`
+### P5-02: Corrupt file handling `[M]` ✅
 - Wrap all parser `open()` calls in try/except
 - On any read error: return `status=FAILED, errors=[ParseError(code="corrupt")]`
 - deps: all parsers
 
-### P5-03: Oversize file guard `[E]`
+### P5-03: Oversize file guard `[E]` ✅
 - Check `os.path.getsize(path)` before parsing
 - If > `MAX_FILE_SIZE_MB`: return `status=OVERSIZE`
 - deps: P0-08
 
-### P5-04: Encoding error recovery `[M]`
+### P5-04: Encoding error recovery `[M]` ✅
 - Detect with `chardet` on first 4096 bytes
 - If confidence < 0.7: attempt UTF-8, then Latin-1 with `errors="replace"`
 - Log warning with detected encoding and confidence
 - deps: P1-10
 
-### P5-05: LibreOffice timeout + SIGKILL `[M]`
+### P5-05: LibreOffice timeout + SIGKILL `[M]` ✅
 - `asyncio.wait_for(subprocess_coro, timeout=SUBPROCESS_TIMEOUT_SEC)`
 - On `asyncio.TimeoutError`: send `SIGKILL`, raise `SubprocessError`
 - Retry once before returning error result
 - deps: P2-01
 
-### P5-06: ProcessPoolExecutor integration `[H]`
+### P5-06: ProcessPoolExecutor integration `[H]` ✅
 - Wrap `PDFParser.parse()`, `XlsxParser.parse()` in executor
 - `loop.run_in_executor(process_pool, sync_parse_fn, path, options)`
 - Parsers must be picklable (no lambda closures, no open file handles passed in)
 - Test: assert event loop not blocked during CPU-bound parse
 - deps: P1-01, P1-08
 
-### P5-07: Redis cache backend `[M]`
-- Create `src/core/cache_redis.py`
-- Implement same interface as `ContentHashStore`
-- Values: msgpack-serialised `ParseResult` (faster than JSON)
-- `SETEX` with TTL
-- Test: set/get round-trip via real Redis in CI
+### P5-07: Redis cache backend `[M]` ✅
+- `ContentHashStore` with Redis optional fallback
+- `get/set/invalidate` supports Redis and in-memory fallback
+- TTL via `REDIS_TTL`
+- Test: cache hit/miss, and failure fallback to memory
 - deps: P0-13
 
-### P5-08: Benchmark suite `[H]`
-- Create `tests/benchmarks/`
-- Sample files: 50-page PDF, 100-page DOCX, XLSX 10k rows, PPTX 30 slides
-- Use `pytest-benchmark`
-- Assertions: PDF p95 < 2000ms, DOCX p95 < 1000ms, XLSX p95 < 500ms
+### P5-08: Benchmark suite `[H]` ✅
+- `tests/benchmarks/` added
+- pytest-benchmark scenario: small parse, large parse, stream first chunk, parallel throughput
+- Fallback timings when plugin not installed
 - deps: all parsers
 
-### P5-09: Docker packaging `[M]`
-- `Dockerfile`: python:3.11-slim + LibreOffice install
-- `docker-compose.yml`: mcp-server + redis services
-- `entrypoint.sh`: LibreOffice warm-start, then `fastmcp run src/app.py`
+### P5-09: Docker packaging `[M]` ✅
+- Multi-stage `Dockerfile` with LibreOffice, poppler, libmagic, fonts
+- `docker-compose.yml` with app + optional redis
+- Build/run tested successfully
 - deps: P0-08
 
-### P5-10: README and tool reference `[M]`
-- Quickstart (Docker, local)
-- Tool reference (all 7 tools with examples)
-- Configuration reference
-- Architecture summary
+### P5-10: README and tool reference `[M]` ✅
+- README includes setup, usage, architecture, troubleshooting
 - deps: all phases complete

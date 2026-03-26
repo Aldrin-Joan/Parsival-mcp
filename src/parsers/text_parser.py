@@ -11,6 +11,7 @@ from src.models.metadata import DocumentMetadata
 from src.models.parse_result import ParseResult, ParseError, Section
 from src.parsers.base import BaseParser
 from src.parsers.registry import register
+from src.parsers.utils import FileOversizeError, enforce_file_size
 
 
 def _detect_encoding(raw_bytes: bytes) -> str:
@@ -100,6 +101,21 @@ class TextParser(BaseParser):
                 images=[],
                 tables=[],
                 errors=[ParseError(code='not_found', message='Text file not found', recoverable=False)],
+                raw_text='',
+                cache_hit=False,
+                request_id='',
+            )
+
+        try:
+            enforce_file_size(source, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'))
+        except FileOversizeError as exc:
+            return ParseResult(
+                status=ParseStatus.OVERSIZE,
+                metadata=DocumentMetadata(source_path=str(source), file_format=FileFormat.TEXT, file_size_bytes=source.stat().st_size),
+                sections=[],
+                images=[],
+                tables=[],
+                errors=[ParseError(code='oversize', message=str(exc), recoverable=False)],
                 raw_text='',
                 cache_hit=False,
                 request_id='',

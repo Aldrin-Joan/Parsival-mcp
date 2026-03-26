@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 from pathlib import Path
 import fitz
 from src.parsers.pdf_parser import PDFParser
@@ -54,6 +55,43 @@ async def test_pdf_parser_text():
         assert "Hello" in result.raw_text
     finally:
         os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_pdf_parser_corrupt_file():
+    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp.close()
+    with open(tmp.name, 'wb') as f:
+        f.write(b'%PDF-1.4\n%\x00\x00\x00\ncorrupt content not pdf')
+
+    try:
+        parser = PDFParser()
+        result = await parser.parse(Path(tmp.name))
+        assert result.status == ParseStatus.FAILED
+        assert result.errors
+        assert result.errors[0].code in ('corrupt', 'encrypted')
+    finally:
+        os.unlink(tmp.name)
+
+
+@pytest.mark.asyncio
+async def test_pdf_parser_encrypted_file():
+    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp.close()
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(tmp.name, encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw='owner', user_pw='user')
+    doc.close()
+
+    try:
+        parser = PDFParser()
+        result = await parser.parse(Path(tmp.name))
+        assert result.status == ParseStatus.FAILED
+        assert result.errors
+        assert result.errors[0].code == 'encrypted'
+    finally:
+        os.unlink(tmp.name)
+
 
 @pytest.mark.asyncio
 async def test_pdf_parser_image_extraction():
@@ -119,4 +157,46 @@ async def test_pdf_parser_table_extraction(monkeypatch):
         assert table.headers == ['A', 'B']
     finally:
         os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_pdf_stream_sections_honors_paging_and_timing():
+    doc = fitz.open()
+    for i in range(3):
+        page = doc.new_page()
+        page.insert_text((72, 72), f"Page {i+1} text")
+    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp.close()
+    doc.save(tmp.name)
+    doc.close()
+
+    try:
+        parser = PDFParser()
+        assert parser.supports_streaming() is True
+
+        start = time.perf_counter()
+        sections = []
+        first_emit_time = None
+        idx = 0
+
+        async for section in parser.stream_sections(Path(tmp.name), options={"simulate_page_delay": 0.2}):
+            if idx == 0:
+                first_emit_time = time.perf_counter() - start
+            sections.append(section)
+            idx += 1
+
+        total_time = time.perf_counter() - start
+
+        assert first_emit_time is not None
+        assert first_emit_time < total_time
+        assert first_emit_time < 0.3
+
+        page_sequence = [s.page for s in sections]
+        assert page_sequence == sorted(page_sequence)
+        assert page_sequence[0] == 1
+        assert page_sequence[-1] == 3
+
+        assert total_time >= 0.6
+    finally:
+        os.unlink(tmp.name)
 

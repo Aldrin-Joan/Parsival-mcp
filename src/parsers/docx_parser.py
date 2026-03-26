@@ -12,6 +12,7 @@ from src.models.table import TableResult, TableCell
 from src.models.image import ImageRef
 from src.parsers.base import BaseParser
 from src.parsers.registry import register
+from src.parsers.utils import FileOversizeError, enforce_file_size, normalize_text, is_docx_encrypted
 
 
 @register(FileFormat.DOCX)
@@ -22,8 +23,56 @@ class DocxParser(BaseParser):
         start = __import__('time').time()
 
         try:
+            enforce_file_size(src, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'))
+            if is_docx_encrypted(src):
+                metadata = DocumentMetadata(
+                    source_path=str(src),
+                    file_format=FileFormat.DOCX,
+                    file_size_bytes=src.stat().st_size if src.exists() else 0,
+                    section_count=0,
+                    table_count=0,
+                    image_count=0,
+                    has_toc=False,
+                )
+                return ParseResult(
+                    status=ParseStatus.FAILED,
+                    metadata=metadata,
+                    sections=[],
+                    images=[],
+                    tables=[],
+                    errors=[ParseError(code='encrypted', message='DOCX file is password-encrypted', recoverable=False)],
+                    raw_text=None,
+                    cache_hit=False,
+                    request_id='',
+                )
+
             doc = docx.Document(str(src))
+        except FileOversizeError as exc:
+            metadata = DocumentMetadata(
+                source_path=str(src),
+                file_format=FileFormat.DOCX,
+                file_size_bytes=src.stat().st_size if src.exists() else 0,
+                section_count=0,
+                table_count=0,
+                image_count=0,
+                has_toc=False,
+            )
+            return ParseResult(
+                status=ParseStatus.OVERSIZE,
+                metadata=metadata,
+                sections=[],
+                images=[],
+                tables=[],
+                errors=[ParseError(code='oversize', message=str(exc), recoverable=False)],
+                raw_text='',
+                cache_hit=False,
+                request_id='',
+            )
         except Exception as exc:
+            code = 'corrupt'
+            msg = str(exc)
+            if 'encrypted' in msg.lower() or 'password' in msg.lower():
+                code = 'encrypted'
             metadata = DocumentMetadata(
                 source_path=str(src),
                 file_format=FileFormat.DOCX,
@@ -39,7 +88,7 @@ class DocxParser(BaseParser):
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code='corrupt', message=str(exc), recoverable=False)],
+                errors=[ParseError(code=code, message=msg, recoverable=False)],
                 raw_text=None,
                 cache_hit=False,
                 request_id='',
@@ -77,7 +126,7 @@ class DocxParser(BaseParser):
                     Section(
                         index=section_idx,
                         type=section_type,
-                        content=text,
+                        content=normalize_text(text),
                         page=None,
                         level=level if is_heading else None,
                         metadata={'style': style_name},
@@ -89,7 +138,7 @@ class DocxParser(BaseParser):
                 table = docx.table.Table(child, doc)
                 rows_data = []
                 for r_id, row in enumerate(table.rows):
-                    row_values = [cell.text.strip() for cell in row.cells]
+                    row_values = [normalize_text(cell.text.strip()) for cell in row.cells]
                     rows_data.append(row_values)
 
                 if not rows_data:
@@ -100,7 +149,7 @@ class DocxParser(BaseParser):
                 cells = []
                 for r_id, row in enumerate(rows_data):
                     for c_id, value in enumerate(row):
-                        cells.append(TableCell(row=r_id, col=c_id, value=str(value), raw_value=value, colspan=1, rowspan=1, is_header=(r_id == 0)))
+                        cells.append(TableCell(row=r_id, col=c_id, value=normalize_text(str(value)), raw_value=value, colspan=1, rowspan=1, is_header=(r_id == 0)))
 
                 tables.append(
                     TableResult(
@@ -167,6 +216,8 @@ class DocxParser(BaseParser):
             parser_version=docx.__version__,
         )
 
+        raw_text = '\n'.join([normalize_text(s.content) for s in sections])
+
         return ParseResult(
             status=ParseStatus.OK,
             metadata=metadata,
@@ -174,7 +225,7 @@ class DocxParser(BaseParser):
             images=images,
             tables=tables,
             errors=errors,
-            raw_text='\n'.join([s.content for s in sections]),
+            raw_text=normalize_text(raw_text),
             cache_hit=False,
             request_id='',
         )

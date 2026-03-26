@@ -2,6 +2,7 @@ import os
 import tempfile
 from pathlib import Path
 import docx
+import pytest
 from src.parsers.docx_parser import DocxParser
 from src.models.enums import ParseStatus, SectionType
 
@@ -53,3 +54,27 @@ def test_docx_parse_metadata():
         assert metadata.page_count is None
     finally:
         os.unlink(path)
+
+
+
+@pytest.mark.asyncio
+async def test_docx_parser_encrypted_file():
+    from zipfile import ZipFile
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+    tmp.close()
+
+    with ZipFile(tmp.name, 'w') as zf:
+        zf.writestr('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>')
+        zf.writestr('EncryptionInfo', 'some dummy encryption info')
+        zf.writestr('EncryptedPackage', 'encrypted-data')
+
+    try:
+        parser = DocxParser()
+        result = await parser.parse(Path(tmp.name))
+
+        assert result.status == ParseStatus.FAILED
+        assert result.errors
+        assert result.errors[0].code == 'encrypted'
+    finally:
+        os.unlink(tmp.name)

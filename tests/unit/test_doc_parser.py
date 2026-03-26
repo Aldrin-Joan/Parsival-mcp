@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 from pathlib import Path
 import shutil
 import tempfile
@@ -13,6 +14,11 @@ except ImportError:
 
 from src.models.enums import FileFormat, ParseStatus
 from src.parsers.doc_parser import DocParser
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 
 def create_docx_file(path: Path):
@@ -117,3 +123,41 @@ async def test_doc_parser_concurrent_semaphore(monkeypatch, tmp_path):
 
     assert all(r.status == ParseStatus.OK for r in results)
     assert maximum <= 2
+
+
+@pytest.mark.skipif(psutil is None, reason='psutil is required for this test')
+@pytest.mark.asyncio
+async def test_doc_parser_subprocess_timeout_kills_orphans(tmp_path):
+    parser = DocParser()
+    cmd = [
+        sys.executable,
+        '-c',
+        'import time; time.sleep(10)',
+    ]
+
+    before = {p.pid for p in psutil.process_iter(attrs=['pid', 'cmdline']) if p.info['cmdline'] and sys.executable in p.info['cmdline']}
+
+    from src.parsers import doc_parser
+
+    with pytest.raises(TimeoutError):
+        await doc_parser._run_subprocess(cmd, timeout=0.2)
+
+    await asyncio.sleep(0.2)
+    after = {p.pid for p in psutil.process_iter(attrs=['pid', 'cmdline']) if p.info['cmdline'] and sys.executable in p.info['cmdline']}
+
+    assert after.issubset(before)
+
+
+@pytest.mark.asyncio
+async def test_executor_parse_in_pool_concurrency(tmp_path):
+    from src.core.executor import run_parse_in_pool
+    from src.models.enums import OutputFormat
+
+    p = tmp_path / 'p.txt'
+    p.write_text('hello world\n' * 1000, encoding='utf-8')
+
+    tasks = [run_parse_in_pool(str(p), options={'output_format': OutputFormat.JSON.value}) for _ in range(6)]
+    results = await asyncio.gather(*tasks)
+
+    assert all(r.status == ParseStatus.OK for r in results)
+

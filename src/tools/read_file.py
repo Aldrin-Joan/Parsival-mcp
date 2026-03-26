@@ -8,11 +8,12 @@ async def _read_file(
     path: str,
     output_format: OutputFormat = OutputFormat.MARKDOWN,
     stream: bool = False,
-) -> ReadFileResult:
+):
     result = await parse_file(path, output_format=output_format, stream=stream)
 
     if stream:
-        raise NotImplementedError('stream path not implemented in tool wrapper')
+        # Stream mode returns an async iterator of StreamChunk from parser path.
+        return result
 
     content = serialize_result(result, output_format)
     return ReadFileResult(

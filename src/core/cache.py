@@ -1,16 +1,40 @@
 import hashlib
 import mmap
+import json
 from pathlib import Path
 from threading import Lock
 from cachetools import LRUCache
 from src.models.parse_result import ParseResult
 from src.config import settings
 
+try:
+    import redis.asyncio as redis
+except ImportError:
+    redis = None
+
 
 class ContentHashStore:
     def __init__(self, max_bytes: int = 500 * 1024 * 1024):
         self._lock = Lock()
         self._cache = LRUCache(maxsize=max_bytes, getsizeof=self._sizeof)
+
+        # Optional Redis backend
+        self._redis = None
+        self._redis_available = False
+
+        if settings.REDIS_ENABLED and redis is not None and settings.REDIS_URL:
+            try:
+                self._redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+                # on Pi and some fake env, ping can fail
+                async def _check_redis():
+                    await self._redis.ping()
+
+                import asyncio
+                asyncio.get_event_loop().run_until_complete(_check_redis())
+                self._redis_available = True
+            except Exception:
+                self._redis = None
+                self._redis_available = False
 
     def _sizeof(self, value: ParseResult) -> int:
         return len(value.model_dump_json().encode("utf-8"))
@@ -48,17 +72,49 @@ class ContentHashStore:
         opts_hash = hashlib.sha256(opts_bytes).hexdigest()[:16]
         return f"{file_hash}:{opts_hash}"
 
-    async def get(self, key: str) -> ParseResult | None:
+    async def _get_in_memory(self, key: str) -> ParseResult | None:
         with self._lock:
             return self._cache.get(key)
 
-    async def set(self, key: str, value: ParseResult) -> None:
+    async def _set_in_memory(self, key: str, value: ParseResult) -> None:
         with self._lock:
             try:
                 self._cache[key] = value
             except ValueError:
                 pass
 
-    async def invalidate(self, key: str) -> None:
+    async def _invalidate_in_memory(self, key: str) -> None:
         with self._lock:
             self._cache.pop(key, None)
+
+    async def get(self, key: str) -> ParseResult | None:
+        if self._redis_available and self._redis:
+            try:
+                raw = await self._redis.get(key)
+                if raw is not None:
+                    parsed = ParseResult.model_validate_json(raw)
+                    return parsed
+            except Exception:
+                self._redis_available = False
+
+        result = await self._get_in_memory(key)
+        return result
+
+    async def set(self, key: str, value: ParseResult) -> None:
+        if self._redis_available and self._redis:
+            try:
+                payload = value.model_dump_json()
+                await self._redis.set(key, payload, ex=settings.REDIS_TTL)
+            except Exception:
+                self._redis_available = False
+
+        await self._set_in_memory(key, value)
+
+    async def invalidate(self, key: str) -> None:
+        if self._redis_available and self._redis:
+            try:
+                await self._redis.delete(key)
+            except Exception:
+                self._redis_available = False
+
+        await self._invalidate_in_memory(key)

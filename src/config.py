@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Parsival"
     PROCESS_POOL_SIZE: int = 4
     MAX_FILE_SIZE_MB: int = 500
+    MAX_STREAM_FILE_SIZE_MB: int = 2048
     HYBRID_HASH_THRESHOLD_MB: int = 50
 
     REDIS_ENABLED: bool = False

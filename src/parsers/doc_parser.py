@@ -3,6 +3,7 @@ import asyncio
 import os
 import shutil
 import signal
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -14,26 +15,68 @@ from src.models.parse_result import ParseResult, ParseError
 from src.parsers.base import BaseParser
 from src.parsers.docx_parser import DocxParser
 from src.parsers.registry import register
+from src.parsers.utils import FileOversizeError, enforce_file_size
+from src.parsers.utils import FileOversizeError, enforce_file_size
 
 LIBREOFFICE_BINARY = os.environ.get('LIBREOFFICE_BINARY', 'soffice')
 LIBREOFFICE_TIMEOUT_SEC = int(os.environ.get('LIBREOFFICE_TIMEOUT_SEC', '30'))
 LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC = int(os.environ.get('LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC', '5'))
 LIBREOFFICE_MAX_CONCURRENT = int(os.environ.get('LIBREOFFICE_MAX_CONCURRENT', '2'))
 
-libreoffice_semaphore = asyncio.Semaphore(LIBREOFFICE_MAX_CONCURRENT)
+# Global bounded semaphore to prevent LibreOffice overload and excessive process spawning.
+libreoffice_semaphore = asyncio.BoundedSemaphore(LIBREOFFICE_MAX_CONCURRENT)
 
 
-async def _force_kill(process: asyncio.subprocess.Process) -> None:
+async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
     try:
+        if process.returncode is not None:
+            return
+
+        if os.name == 'posix':
+            pgid = os.getpgid(process.pid)
+            os.killpg(pgid, signal.SIGTERM)
+        else:
+            # Windows: send CTRL_BREAK_EVENT to process group
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        await asyncio.sleep(0.2)
+
         if process.returncode is None:
-            process.kill()
             if os.name == 'posix':
-                try:
-                    os.kill(process.pid, signal.SIGKILL)
-                except Exception:
-                    pass
-    except ProcessLookupError:
+                pgid = os.getpgid(process.pid)
+                os.killpg(pgid, signal.SIGKILL)
+            else:
+                process.kill()
+    except (ProcessLookupError, PermissionError):
         pass
+    except Exception:
+        pass
+
+
+async def _run_subprocess(cmd: list[str], timeout: int) -> tuple[bytes, bytes]:
+    kwargs = {
+        'stdout': asyncio.subprocess.PIPE,
+        'stderr': asyncio.subprocess.PIPE,
+    }
+    if os.name == 'posix':
+        kwargs['preexec_fn'] = os.setsid
+    else:
+        kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    process = await asyncio.create_subprocess_exec(*cmd, **kwargs)
+
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except asyncio.TimeoutError as exc:
+        await _terminate_process_group(process)
+        await process.wait()
+        raise TimeoutError('LibreOffice conversion timed out') from exc
+
+    if process.returncode != 0:
+        raise RuntimeError(
+            f'LibreOffice conversion failed (returncode={process.returncode}) stdout={stdout.decode(errors="ignore")} stderr={stderr.decode(errors="ignore")}'
+        )
+
+    return stdout, stderr
 
 
 @register(FileFormat.DOC)
@@ -58,28 +101,7 @@ class DocParser(BaseParser):
             str(doc_path),
         ]
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        try:
-            await asyncio.wait_for(process.wait(), timeout=LIBREOFFICE_TIMEOUT_SEC)
-        except asyncio.TimeoutError as exc:
-            await _force_kill(process)
-            try:
-                await asyncio.wait_for(process.wait(), timeout=LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC)
-            except asyncio.TimeoutError:
-                await _force_kill(process)
-                await process.wait()
-            raise TimeoutError('LibreOffice conversion timed out') from exc
-
-        if process.returncode != 0:
-            stdout, stderr = await process.communicate()
-            raise RuntimeError(
-                f'LibreOffice conversion failed (returncode={process.returncode}) stdout={stdout.decode(errors="ignore")} stderr={stderr.decode(errors="ignore")} '
-            )
+        await _run_subprocess(cmd, timeout=LIBREOFFICE_TIMEOUT_SEC)
 
         if not output_path.exists():
             raise FileNotFoundError('Converted DOCX file not found after LibreOffice conversion')
@@ -121,6 +143,21 @@ class DocParser(BaseParser):
                 request_id='',
             )
 
+        try:
+            enforce_file_size(source_path, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'))
+        except FileOversizeError as exc:
+            return ParseResult(
+                status=ParseStatus.OVERSIZE,
+                metadata=DocumentMetadata(source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size),
+                sections=[],
+                images=[],
+                tables=[],
+                errors=[ParseError(code='oversize', message=str(exc), recoverable=False)],
+                raw_text='',
+                cache_hit=False,
+                request_id='',
+            )
+
         converted_docx = None
         temp_dir = None
         start = time.time()
@@ -143,13 +180,17 @@ class DocParser(BaseParser):
                 )
             except Exception as exc:
                 await self._cleanup_temp_dir(temp_dir)
+                exc_msg = str(exc)
+                code = 'conversion_failed'
+                if 'encrypted' in exc_msg.lower() or 'password' in exc_msg.lower():
+                    code = 'encrypted'
                 return ParseResult(
                     status=ParseStatus.FAILED,
                     metadata=DocumentMetadata(source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size),
                     sections=[],
                     images=[],
                     tables=[],
-                    errors=[ParseError(code='conversion_failed', message=str(exc), recoverable=False)],
+                    errors=[ParseError(code=code, message=exc_msg, recoverable=False)],
                     raw_text='',
                     cache_hit=False,
                     request_id='',

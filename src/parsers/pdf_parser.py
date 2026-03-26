@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import time
 from pathlib import Path
 from datetime import datetime
@@ -18,6 +19,7 @@ from src.models.table import TableResult, TableCell
 from src.models.image import ImageRef
 from src.parsers.base import BaseParser
 from src.parsers.registry import register
+from src.parsers.utils import FileOversizeError, normalize_text, enforce_file_size
 
 
 @register(FileFormat.PDF)
@@ -27,9 +29,10 @@ class PDFParser(BaseParser):
         start = time.time()
         src = Path(path)
 
+        # Early oversize rejection for parse path
         try:
-            doc = fitz.open(str(src))
-        except Exception as exc:
+            enforce_file_size(src, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'))
+        except FileOversizeError as exc:
             metadata = DocumentMetadata(
                 source_path=str(src),
                 file_format=FileFormat.PDF,
@@ -40,15 +43,65 @@ class PDFParser(BaseParser):
                 has_toc=False,
             )
             return ParseResult(
+                status=ParseStatus.OVERSIZE,
+                metadata=metadata,
+                sections=[],
+                images=[],
+                tables=[],
+                errors=[ParseError(code='oversize', message=str(exc), recoverable=False)],
+                raw_text=None,
+                cache_hit=False,
+                request_id='',
+            )
+
+        try:
+            doc = fitz.open(str(src))
+            if hasattr(doc, 'is_encrypted') and doc.is_encrypted:
+                metadata = DocumentMetadata(
+                    source_path=str(src),
+                    file_format=FileFormat.PDF,
+                    file_size_bytes=src.stat().st_size if src.exists() else 0,
+                    section_count=0,
+                    table_count=0,
+                    image_count=0,
+                    has_toc=False,
+                )
+                doc.close()
+                return ParseResult(
+                    status=ParseStatus.FAILED,
+                    metadata=metadata,
+                    sections=[],
+                    images=[],
+                    tables=[],
+                    errors=[ParseError(code='encrypted', message='PDF file is password-protected', recoverable=False)],
+                    raw_text=None,
+                    cache_hit=False,
+                    request_id='',
+                )
+        except Exception as exc:
+            metadata = DocumentMetadata(
+                source_path=str(src),
+                file_format=FileFormat.PDF,
+                file_size_bytes=src.stat().st_size if src.exists() else 0,
+                section_count=0,
+                table_count=0,
+                image_count=0,
+                has_toc=False,
+            )
+            error_code = 'corrupt'
+            message = str(exc)
+            if 'encrypted' in message.lower() or 'password' in message.lower():
+                error_code = 'encrypted'
+            return ParseResult(
                 status=ParseStatus.FAILED,
                 metadata=metadata,
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code="corrupt", message=str(exc), recoverable=False)],
+                errors=[ParseError(code=error_code, message=message, recoverable=False)],
                 raw_text=None,
                 cache_hit=False,
-                request_id="",  # caller can set
+                request_id='',
             )
 
         sections: list[Section] = []
@@ -83,7 +136,7 @@ class PDFParser(BaseParser):
                     for line in block.get("lines", [])
                     for span in line.get("spans", [])
                 )
-                block_text = block_text.strip()
+                block_text = normalize_text(block_text.strip())
                 if not block_text:
                     continue
 
@@ -203,10 +256,77 @@ class PDFParser(BaseParser):
             images=images,
             tables=tables,
             errors=parse_errors,
-            raw_text="\n".join(raw_text_chunks),
+            raw_text=normalize_text("\n".join(raw_text_chunks)),
             cache_hit=False,
             request_id="",
         )
+
+    async def stream_sections(self, path: Path, options: dict | None = None):
+        src = Path(path)
+        try:
+            enforce_file_size(src, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'), stream_mode=True)
+        except FileOversizeError as exc:
+            # Too big even for streaming, yield nothing and return.
+            return
+
+        doc = fitz.open(str(src))
+        page_delay = 0.0
+        if options is not None:
+            page_delay = float(options.get("simulate_page_delay", 0.0))
+
+        section_index = 0
+        for page_num in range(doc.page_count):
+            page = doc.load_page(page_num)
+            page_dict = page.get_text("dict")
+
+            sizes: list[float] = []
+            for block in page_dict.get("blocks", []):
+                if block.get("type") != 0:
+                    continue
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        sizes.append(span.get("size", 0.0))
+
+            if sizes:
+                median_size = sorted(sizes)[len(sizes) // 2]
+            else:
+                median_size = 0.0
+
+            for block in page_dict.get("blocks", []):
+                if block.get("type") != 0:
+                    continue
+                block_text = normalize_text(
+                    "\n".join(
+                        span.get("text", "")
+                        for line in block.get("lines", [])
+                        for span in line.get("spans", [])
+                    ).strip()
+                )
+                if not block_text:
+                    continue
+
+                span_sizes = [span.get("size", 0.0) for line in block.get("lines", []) for span in line.get("spans", [])]
+                avg_size = sum(span_sizes) / len(span_sizes) if span_sizes else 0.0
+                is_heading = (median_size > 0 and avg_size >= 1.3 * median_size) or block_text.isupper()
+                section_type = SectionType.HEADING if is_heading else SectionType.PARAGRAPH
+
+                section = Section(
+                    index=section_index,
+                    type=section_type,
+                    content=block_text,
+                    page=page_num + 1,
+                    level=1 if is_heading else None,
+                    metadata={},
+                )
+
+                yield section
+                section_index += 1
+
+            if page_delay > 0:
+                await asyncio.sleep(page_delay)
+
+    def supports_streaming(self) -> bool:
+        return True
 
     async def parse_metadata(self, path: Path) -> DocumentMetadata:
         src = Path(path)

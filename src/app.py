@@ -8,6 +8,7 @@ from src.serialisers.markdown import MarkdownSerializer
 from src.parsers.registry import get_parser
 from src.core.router import FormatRouter
 from src.core.cache import ContentHashStore
+from src.core.executor import run_parse_in_pool
 from src.models.enums import OutputFormat
 from src.models.parse_result import ParseResult
 import src.tools  # register tools
@@ -44,7 +45,12 @@ async def parse_file(path: str, output_format: OutputFormat = OutputFormat.MARKD
         hit.cache_hit = True
         return hit
 
-    result = await parser.parse(Path(path))
+    if stream:
+        # Stream mode bypasses the full parse + cache path and returns an async stream of chunks.
+        return parser.stream_chunks(Path(path), options=options)
+
+    # Use process pool for blocking parse operations to avoid event loop block and control worker count.
+    result = await run_parse_in_pool(path, options=options)
     result = PostProcessingPipeline.run(result)
 
     if not stream:
