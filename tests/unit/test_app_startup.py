@@ -1,36 +1,11 @@
 import asyncio
-import importlib
-import sys
 import tempfile
-import types
 from pathlib import Path
+import types
 
 
-def test_app_parse_path_calls_initialize_without_on_startup(monkeypatch):
-    # Fake fastmcp module with no on_startup API.
-    fake_fastmcp = types.ModuleType("fastmcp")
-
-    class FakeMCP:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def tool(self, *args, **kwargs):
-            def decorator(fn):
-                return fn
-
-            return decorator
-
-    fake_fastmcp.FastMCP = FakeMCP
-
-    monkeypatch.setitem(sys.modules, "fastmcp", fake_fastmcp)
-
-    # Reload the app module with the fake FastMCP backend.
+def test_app_parse_path_calls_initialize(monkeypatch):
     import src.app as app
-
-    app = importlib.reload(app)
-
-    # Verify mcp has no on_startup attr but app starts anyway.
-    assert not hasattr(app.mcp, "on_startup")
 
     # Monkeypatch runtime dependencies.
     dummy_result = types.SimpleNamespace(

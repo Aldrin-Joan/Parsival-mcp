@@ -9,7 +9,7 @@ import pytest
 from mcp import ClientSessionGroup
 from mcp.client.stdio import StdioServerParameters
 
-from src.app import mcp
+from src.app import TOOL_FUNCTIONS
 from src.tools.read_file import _read_file
 from src.models.enums import OutputFormat
 
@@ -48,14 +48,14 @@ def _stdio_server_params() -> StdioServerParameters:
 
 @pytest.mark.asyncio
 async def test_stdio_startup_and_tool_inventory_parity():
-    expected_fastmcp = set(getattr(mcp._tool_manager, "_tools", {}).keys())
-    assert expected_fastmcp == EXPECTED_TOOLS
+    expected_tools = set(TOOL_FUNCTIONS.keys())
+    assert expected_tools == EXPECTED_TOOLS
 
     async with ClientSessionGroup() as group:
         await asyncio.wait_for(group.connect_to_server(_stdio_server_params()), timeout=20)
         discovered_stdio = set(group.tools.keys())
 
-    assert discovered_stdio == expected_fastmcp
+    assert discovered_stdio == expected_tools
 
 
 @pytest.mark.asyncio
@@ -87,6 +87,6 @@ async def test_stdio_list_supported_formats_and_read_file():
                 # while the same backend operation succeeds in-process.
                 fallback = await _read_file(text_path, output_format=OutputFormat.TEXT, stream=False)
                 assert "Parsival stdio integration test" in fallback.content
-                pytest.xfail("Known stdio timeout for read_file call in current FastMCP transport stack")
+                pytest.xfail("Known intermittent stdio timeout for read_file call in current environment")
     finally:
         Path(text_path).unlink(missing_ok=True)

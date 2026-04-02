@@ -1,5 +1,4 @@
 from typing import Any, Optional, Tuple, List
-from fastmcp import FastMCP
 
 from src.core.logging import get_logger
 from src.post_processors.pipeline import PostProcessingPipeline
@@ -20,21 +19,11 @@ from src.mcp_runtime import initialize_cache, parse_file_core, serialize_result_
 # Singleton instances
 logger = get_logger("parsival")
 cache_store = ContentHashStore(max_bytes=500 * 1024 * 1024)
-mcp = FastMCP("Parsival", version="0.1.0")
 
 
 async def _startup():
     """Application startup initialization."""
     await initialize_cache(cache_store)
-
-
-if hasattr(mcp, "on_startup"):
-
-    @mcp.on_startup
-    async def startup_hook():
-        await _startup()
-else:
-    logger.warning("mcp_on_startup_not_available", message="FastMCP on_startup hook not available in this version")
 
 
 def get_cache():
@@ -81,10 +70,9 @@ def serialize_result(result, output_format: OutputFormat) -> str:
     )
 
 
-# --- MCP Tool Registrations ---
+# --- Tool Callables ---
 
 
-@mcp.tool()
 async def read_file(
     path: str,
     output_format: str = "markdown",
@@ -115,7 +103,6 @@ async def read_file(
     )
 
 
-@mcp.tool()
 async def get_metadata(path: str) -> DocumentMetadata:
     """Extracts summary metadata (author, pages, dates) from a file."""
     from src.tools.get_metadata import get_metadata as _get_meta
@@ -123,7 +110,6 @@ async def get_metadata(path: str) -> DocumentMetadata:
     return await _get_meta(path)
 
 
-@mcp.tool()
 async def extract_table(path: str, table_index: int = 1, sheet_name: Optional[str] = None) -> TableResult:
     """Extracts a specific table or spreadsheet sheet by index."""
     from src.tools.extract_table import extract_table as _ext_table
@@ -131,7 +117,6 @@ async def extract_table(path: str, table_index: int = 1, sheet_name: Optional[st
     return await _ext_table(path, table_index, sheet_name)
 
 
-@mcp.tool()
 async def extract_images(
     path: str, page_range: Optional[Tuple[int, int]] = None, max_dimension: Optional[int] = None
 ) -> List[ImageRef]:
@@ -141,7 +126,6 @@ async def extract_images(
     return await _ext_images(path, page_range, max_dimension)
 
 
-@mcp.tool()
 async def search_file(path: str, query: str, top_k: int = 5) -> List[SearchHit]:
     """Semantic BM25 search within a specific document's text."""
     from src.tools.search_file import search_file as _search
@@ -149,7 +133,6 @@ async def search_file(path: str, query: str, top_k: int = 5) -> List[SearchHit]:
     return await _search(path, query, top_k)
 
 
-@mcp.tool()
 async def convert_to_markdown(path: str) -> str:
     """Convenience tool to get raw markdown string for a file."""
     from src.tools.convert_to_markdown import convert_to_markdown as _conv
@@ -157,9 +140,19 @@ async def convert_to_markdown(path: str) -> str:
     return await _conv(path)
 
 
-@mcp.tool()
 def list_supported_formats() -> dict:
     """Lists all file formats this parser can handle."""
     from src.tools.list_supported_formats import list_supported_formats_tool
 
     return list_supported_formats_tool()
+
+
+TOOL_FUNCTIONS = {
+    "read_file": read_file,
+    "get_metadata": get_metadata,
+    "extract_table": extract_table,
+    "extract_images": extract_images,
+    "search_file": search_file,
+    "convert_to_markdown": convert_to_markdown,
+    "list_supported_formats": list_supported_formats,
+}

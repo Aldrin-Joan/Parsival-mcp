@@ -1,14 +1,14 @@
 [project]
 name = "parsival"
 version = "0.1.0"
-description = "FastMCP file parser system, Phase 0 foundation"
+description = "MCP file parser system, Phase 0 foundation"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 
 dependencies = [
     # Core
-    "fastmcp>=2.0.0,<3.0.0",
+    "mcp>=1.26.0,<2.0.0",
     "pydantic>=2.5.0,<3.0.0",
     "pydantic-settings>=2.1.0,<3.0.0",
 

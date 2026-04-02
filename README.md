@@ -1,6 +1,6 @@
 # Parsival
 
-Parsival is a production-friendly, tool-based file parsing microservice built on FastMCP. It is designed to convert common document formats into rich structured outputs (Markdown, JSON, text), with performance tuning and safety hardening for stream processing and agent integrations.
+Parsival is a production-friendly, tool-based file parsing microservice built on the MCP Python SDK. It is designed to convert common document formats into rich structured outputs (Markdown, JSON, text), with performance tuning and safety hardening for stream processing and agent integrations.
 
 - Supported input formats: PDF, DOCX, DOC, PPTX, XLSX, CSV, HTML, MD, TXT
 - Streaming parse support for large documents
@@ -66,26 +66,6 @@ python -m src.mcp_entrypoint
 
 This uses `MCP_TRANSPORT=stdio` by default in project tooling and keeps stdout dedicated to MCP protocol traffic.
 
-When to use each transport mode:
-
-- `stdio` (recommended default): local development, VS Code MCP integration, and migration target behavior.
-- `fastmcp` SSE/HTTP (legacy rollback): temporary compatibility fallback if a client requires HTTP/SSE transport.
-
-Legacy rollback (FastMCP SSE/HTTP):
-
-```bash
-set MCP_TRANSPORT=fastmcp
-set FASTMCP_SERVER_HOST=0.0.0.0
-set FASTMCP_SERVER_PORT=8000
-python -m src.mcp_entrypoint
-```
-
-or using legacy FastMCP command directly:
-
-```bash
-python -m fastmcp --host 0.0.0.0 --port 8000 --transport sse src/app.py:mcp
-```
-
 ### Verify supported formats
 
 ```python
@@ -113,12 +93,12 @@ print(list_supported_formats())
 
 ### Logical layers
 
-- `src/app.py` - FastMCP app & tool definitions
+- `src/app.py` - tool definitions and parse orchestration
 - `src/core` - configuration, caching, routing, executor, security
 - `src/parsers` - format-specific parsing logic
 - `src/post_processors` - result enrichment pipeline
 - `src/serialisers` - output marshal (Markdown, JSON, text)
-- `src/tools` - public tool API bound to FastMCP
+- `src/tools` - public tool API wrappers
 
 ### Core flow
 
@@ -213,7 +193,7 @@ print(list_supported_formats())
 | `MCP_SUBPROCESS_TIMEOUT_SEC` | `30` | Subprocess timeout in doc parser
 | `MCP_ALLOWED_DIRECTORIES` | `[., /tmp]` | directories permitted for file read paths
 | `MCP_WORKSPACE_ROOT` | `.` | root directory boundary for security
-| `MCP_TRANSPORT` | `fastmcp` | transport selector: `fastmcp` or `stdio` |
+| `MCP_TRANSPORT` | `stdio` | MCP transport mode (stdio only) |
 
 ### Non-prefixed env vars from parser
 
@@ -244,12 +224,6 @@ pytest -q
 
 ```bash
 python scripts/tool_smoke_test_stdio.py
-```
-
-### Run legacy SSE smoke test
-
-```bash
-python scripts/tool_smoke_test_http.py
 ```
 
 ### Run benchmarks
@@ -285,36 +259,18 @@ docker build -t parsival:latest .
 
 ### Run
 
-Recommended (stdio mode, no port mapping required):
+Run (stdio mode, no port mapping required):
 
 ```bash
 docker run --rm -i -e PYTHONUNBUFFERED=1 -e MCP_TRANSPORT=stdio -e PYTHONPATH=/app parsival:latest
 ```
 
-Legacy rollback (FastMCP SSE/HTTP):
-
-```bash
-docker run --rm -p 8000:8000 \
-  -e PYTHONUNBUFFERED=1 \
-  -e PYTHONPATH=/app \
-  -e MCP_TRANSPORT=fastmcp \
-  -e FASTMCP_SERVER_HOST=0.0.0.0 \
-  -e FASTMCP_SERVER_PORT=8000 \
-  parsival:latest
-```
-
 ### Run with docker compose
 
-Recommended stdio service:
+Run stdio service:
 
 ```bash
 docker compose up parsival
-```
-
-Legacy SSE profile/service:
-
-```bash
-docker compose --profile legacy-sse up parsival-legacy-sse
 ```
 
 ### Compose (single host)
@@ -329,7 +285,7 @@ Container includes LibreOffice and `python-magic` dependencies required for DOC/
 
 ## API and tools
 
-Parsival exposes FastMCP tools. Use your preferred MCP client to call tools by name.
+Parsival exposes MCP tools over stdio. Use your preferred MCP client to call tools by name.
 
 ### `read_file`
 - `path`: str
