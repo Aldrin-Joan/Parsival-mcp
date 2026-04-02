@@ -10,17 +10,17 @@ async def _read_file(
     path: str,
     output_format: OutputFormat = OutputFormat.MARKDOWN,
     stream: bool = False,
-) -> ReadFileResult:
+):
     """
     Parses a file and returns its content in the specified format.
 
     Args:
         path: Validated absolute or relative path to the file.
-        output_format: Desired output format (markdown or json).
+        output_format: Desired output format (markdown, json, text).
         stream: Whether to stream sections as chunks.
 
     Returns:
-        ReadFileResult containing parsed content and metadata.
+        ReadFileResult or AsyncIterator[StreamChunk] depending on stream flag.
     """
     from src.app import parse_file, serialize_result
 
@@ -30,15 +30,12 @@ async def _read_file(
     logger.info(
         "tool_read_file_start",
         path=str(safe_path),
-        format=output_format.value
+        format=output_format.value,
+        streaming=stream,
     )
 
     # 2. Execution
-    result = await parse_file(
-        str(safe_path),
-        output_format=output_format,
-        stream=stream
-    )
+    result = await parse_file(str(safe_path), output_format=output_format, stream=stream)
 
     if stream:
         # Stream mode returns an async iterator of StreamChunk
@@ -51,7 +48,8 @@ async def _read_file(
     logger.info(
         "tool_read_file_complete",
         path=str(safe_path),
-        sections=len(result.sections)
+        sections=len(result.sections),
+        cache_hit=result.cache_hit,
     )
 
     return ReadFileResult(
@@ -61,7 +59,5 @@ async def _read_file(
         metadata=result.metadata,
         errors=result.errors,
         cache_hit=result.cache_hit,
-        request_id=result.request_id or '',
+        request_id=result.request_id or "",
     )
-
-

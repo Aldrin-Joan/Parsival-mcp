@@ -16,12 +16,11 @@ from src.parsers.base import BaseParser
 from src.parsers.docx_parser import DocxParser
 from src.parsers.registry import register
 from src.parsers.utils import FileOversizeError, enforce_file_size
-from src.parsers.utils import FileOversizeError, enforce_file_size
 
-LIBREOFFICE_BINARY = os.environ.get('LIBREOFFICE_BINARY', 'soffice')
-LIBREOFFICE_TIMEOUT_SEC = int(os.environ.get('LIBREOFFICE_TIMEOUT_SEC', '30'))
-LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC = int(os.environ.get('LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC', '5'))
-LIBREOFFICE_MAX_CONCURRENT = int(os.environ.get('LIBREOFFICE_MAX_CONCURRENT', '2'))
+LIBREOFFICE_BINARY = os.environ.get("LIBREOFFICE_BINARY", "soffice")
+LIBREOFFICE_TIMEOUT_SEC = int(os.environ.get("LIBREOFFICE_TIMEOUT_SEC", "30"))
+LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC = int(os.environ.get("LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC", "5"))
+LIBREOFFICE_MAX_CONCURRENT = int(os.environ.get("LIBREOFFICE_MAX_CONCURRENT", "2"))
 
 # Global bounded semaphore to prevent LibreOffice overload and excessive process spawning.
 libreoffice_semaphore = asyncio.BoundedSemaphore(LIBREOFFICE_MAX_CONCURRENT)
@@ -32,7 +31,7 @@ async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
         if process.returncode is not None:
             return
 
-        if os.name == 'posix':
+        if os.name == "posix":
             pgid = os.getpgid(process.pid)
             os.killpg(pgid, signal.SIGTERM)
         else:
@@ -41,7 +40,7 @@ async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
         await asyncio.sleep(0.2)
 
         if process.returncode is None:
-            if os.name == 'posix':
+            if os.name == "posix":
                 pgid = os.getpgid(process.pid)
                 os.killpg(pgid, signal.SIGKILL)
             else:
@@ -54,13 +53,13 @@ async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
 
 async def _run_subprocess(cmd: list[str], timeout: int) -> tuple[bytes, bytes]:
     kwargs = {
-        'stdout': asyncio.subprocess.PIPE,
-        'stderr': asyncio.subprocess.PIPE,
+        "stdout": asyncio.subprocess.PIPE,
+        "stderr": asyncio.subprocess.PIPE,
     }
-    if os.name == 'posix':
-        kwargs['preexec_fn'] = os.setsid
+    if os.name == "posix":
+        kwargs["preexec_fn"] = os.setsid
     else:
-        kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
     process = await asyncio.create_subprocess_exec(*cmd, **kwargs)
 
@@ -69,11 +68,11 @@ async def _run_subprocess(cmd: list[str], timeout: int) -> tuple[bytes, bytes]:
     except asyncio.TimeoutError as exc:
         await _terminate_process_group(process)
         await process.wait()
-        raise TimeoutError('LibreOffice conversion timed out') from exc
+        raise TimeoutError("LibreOffice conversion timed out") from exc
 
     if process.returncode != 0:
         raise RuntimeError(
-            f'LibreOffice conversion failed (returncode={process.returncode}) stdout={stdout.decode(errors="ignore")} stderr={stderr.decode(errors="ignore")}'
+            f"LibreOffice conversion failed (returncode={process.returncode}) stdout={stdout.decode(errors='ignore')} stderr={stderr.decode(errors='ignore')}"
         )
 
     return stdout, stderr
@@ -81,22 +80,21 @@ async def _run_subprocess(cmd: list[str], timeout: int) -> tuple[bytes, bytes]:
 
 @register(FileFormat.DOC)
 class DocParser(BaseParser):
-
     async def _convert_doc_to_docx(self, doc_path: Path) -> Tuple[Path, Path]:
-        temp_dir = Path(tempfile.mkdtemp(prefix='parsival_docx_'))
-        output_path = temp_dir / f'{doc_path.stem}.docx'
+        temp_dir = Path(tempfile.mkdtemp(prefix="parsival_docx_"))
+        output_path = temp_dir / f"{doc_path.stem}.docx"
 
         cmd = [
             LIBREOFFICE_BINARY,
-            '--headless',
-            '--invisible',
-            '--nologo',
-            '--nodefault',
-            '--nofirststartwizard',
-            '--nocrashreport',
-            '--convert-to',
-            'docx',
-            '--outdir',
+            "--headless",
+            "--invisible",
+            "--nologo",
+            "--nodefault",
+            "--nofirststartwizard",
+            "--nocrashreport",
+            "--convert-to",
+            "docx",
+            "--outdir",
             str(temp_dir),
             str(doc_path),
         ]
@@ -104,7 +102,7 @@ class DocParser(BaseParser):
         await _run_subprocess(cmd, timeout=LIBREOFFICE_TIMEOUT_SEC)
 
         if not output_path.exists():
-            raise FileNotFoundError('Converted DOCX file not found after LibreOffice conversion')
+            raise FileNotFoundError("Converted DOCX file not found after LibreOffice conversion")
 
         return output_path, temp_dir
 
@@ -124,38 +122,46 @@ class DocParser(BaseParser):
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code='not_found', message='DOC file does not exist', recoverable=False)],
-                raw_text='',
+                errors=[ParseError(code="not_found", message="DOC file does not exist", recoverable=False)],
+                raw_text="",
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
 
-        if source_path.suffix.lower() != '.doc':
+        if source_path.suffix.lower() != ".doc":
             return ParseResult(
                 status=ParseStatus.UNSUPPORTED,
-                metadata=DocumentMetadata(source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size),
+                metadata=DocumentMetadata(
+                    source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size
+                ),
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code='unsupported_format', message='Expected .doc file', recoverable=False)],
-                raw_text='',
+                errors=[ParseError(code="unsupported_format", message="Expected .doc file", recoverable=False)],
+                raw_text="",
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
 
         try:
-            enforce_file_size(source_path, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'))
+            enforce_file_size(
+                source_path,
+                max_size_mb=(options or {}).get("max_size_mb"),
+                max_stream_size_mb=(options or {}).get("max_stream_file_size_mb"),
+            )
         except FileOversizeError as exc:
             return ParseResult(
                 status=ParseStatus.OVERSIZE,
-                metadata=DocumentMetadata(source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size),
+                metadata=DocumentMetadata(
+                    source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size
+                ),
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code='oversize', message=str(exc), recoverable=False)],
-                raw_text='',
+                errors=[ParseError(code="oversize", message=str(exc), recoverable=False)],
+                raw_text="",
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
 
         converted_docx = None
@@ -169,31 +175,39 @@ class DocParser(BaseParser):
                 await self._cleanup_temp_dir(temp_dir)
                 return ParseResult(
                     status=ParseStatus.FAILED,
-                    metadata=DocumentMetadata(source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size),
+                    metadata=DocumentMetadata(
+                        source_path=str(source_path),
+                        file_format=FileFormat.DOC,
+                        file_size_bytes=source_path.stat().st_size,
+                    ),
                     sections=[],
                     images=[],
                     tables=[],
-                    errors=[ParseError(code='conversion_timeout', message=str(exc), recoverable=True)],
-                    raw_text='',
+                    errors=[ParseError(code="conversion_timeout", message=str(exc), recoverable=True)],
+                    raw_text="",
                     cache_hit=False,
-                    request_id='',
+                    request_id="",
                 )
             except Exception as exc:
                 await self._cleanup_temp_dir(temp_dir)
                 exc_msg = str(exc)
-                code = 'conversion_failed'
-                if 'encrypted' in exc_msg.lower() or 'password' in exc_msg.lower():
-                    code = 'encrypted'
+                code = "conversion_failed"
+                if "encrypted" in exc_msg.lower() or "password" in exc_msg.lower():
+                    code = "encrypted"
                 return ParseResult(
                     status=ParseStatus.FAILED,
-                    metadata=DocumentMetadata(source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size),
+                    metadata=DocumentMetadata(
+                        source_path=str(source_path),
+                        file_format=FileFormat.DOC,
+                        file_size_bytes=source_path.stat().st_size,
+                    ),
                     sections=[],
                     images=[],
                     tables=[],
                     errors=[ParseError(code=code, message=exc_msg, recoverable=False)],
-                    raw_text='',
+                    raw_text="",
                     cache_hit=False,
-                    request_id='',
+                    request_id="",
                 )
 
         try:
@@ -203,14 +217,16 @@ class DocParser(BaseParser):
             await self._cleanup_temp_dir(temp_dir)
             return ParseResult(
                 status=ParseStatus.FAILED,
-                metadata=DocumentMetadata(source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size),
+                metadata=DocumentMetadata(
+                    source_path=str(source_path), file_format=FileFormat.DOC, file_size_bytes=source_path.stat().st_size
+                ),
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code='docx_processing_failed', message=str(exc), recoverable=False)],
-                raw_text='',
+                errors=[ParseError(code="docx_processing_failed", message=str(exc), recoverable=False)],
+                raw_text="",
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
         finally:
             await self._cleanup_temp_dir(temp_dir)
@@ -223,8 +239,8 @@ class DocParser(BaseParser):
 
     async def parse_metadata(self, path: Path) -> DocumentMetadata:
         source_path = Path(path)
-        if not source_path.exists() or source_path.suffix.lower() != '.doc':
-            raise FileNotFoundError('DOC file missing or invalid extension')
+        if not source_path.exists() or source_path.suffix.lower() != ".doc":
+            raise FileNotFoundError("DOC file missing or invalid extension")
 
         converted_docx = None
         temp_dir = None

@@ -1,9 +1,9 @@
 import hashlib
 import mmap
-import json
 from pathlib import Path
 from threading import Lock
 from cachetools import LRUCache
+from src.core.logging import get_logger
 from src.models.parse_result import ParseResult
 from src.config import settings
 
@@ -22,19 +22,23 @@ class ContentHashStore:
         self._redis = None
         self._redis_available = False
 
-        if settings.REDIS_ENABLED and redis is not None and settings.REDIS_URL:
-            try:
-                self._redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
-                # on Pi and some fake env, ping can fail
-                async def _check_redis():
-                    await self._redis.ping()
+    async def initialize(self) -> None:
+        """Initialize optional Redis connection after event loop is running."""
+        if not settings.REDIS_ENABLED or redis is None or not settings.REDIS_URL:
+            return
 
-                import asyncio
-                asyncio.get_event_loop().run_until_complete(_check_redis())
-                self._redis_available = True
-            except Exception:
-                self._redis = None
-                self._redis_available = False
+        try:
+            self._redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+            await self._redis.ping()
+            self._redis_available = True
+        except Exception as exc:
+            self._redis = None
+            self._redis_available = False
+            # resilience: continue with in-memory only
+            get_logger(__name__).warning("redis_connection_failed", error=str(exc))
+
+    def _sizeof(self, value: ParseResult) -> int:
+        return len(value.model_dump_json().encode("utf-8"))
 
     def _sizeof(self, value: ParseResult) -> int:
         return len(value.model_dump_json().encode("utf-8"))

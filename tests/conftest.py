@@ -14,9 +14,10 @@ def parser_registry_isolation():
     parser_registry._REGISTRY.clear()
     try:
         import src.parsers as parsers_pkg
+
         importlib.reload(parsers_pkg)
-        for module_name in getattr(parsers_pkg, '__all__', []):
-            if module_name in ('registry', 'base'):
+        for module_name in getattr(parsers_pkg, "__all__", []):
+            if module_name in ("registry", "base"):
                 continue
             full_name = f"src.parsers.{module_name}"
             try:

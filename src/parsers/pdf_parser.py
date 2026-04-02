@@ -2,11 +2,11 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from datetime import datetime
 from typing import Optional
 import base64
 
 import fitz  # PyMuPDF
+
 try:
     import pdfplumber
 except ImportError:  # type: ignore
@@ -24,14 +24,17 @@ from src.parsers.utils import FileOversizeError, normalize_text, enforce_file_si
 
 @register(FileFormat.PDF)
 class PDFParser(BaseParser):
-
     async def parse(self, path: Path, options: dict | None = None) -> ParseResult:
         start = time.time()
         src = Path(path)
 
         # Early oversize rejection for parse path
         try:
-            enforce_file_size(src, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'))
+            enforce_file_size(
+                src,
+                max_size_mb=(options or {}).get("max_size_mb"),
+                max_stream_size_mb=(options or {}).get("max_stream_file_size_mb"),
+            )
         except FileOversizeError as exc:
             metadata = DocumentMetadata(
                 source_path=str(src),
@@ -48,15 +51,16 @@ class PDFParser(BaseParser):
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code='oversize', message=str(exc), recoverable=False)],
+                errors=[ParseError(code="oversize", message=str(exc), recoverable=False)],
                 raw_text=None,
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
 
+        doc = None
         try:
             doc = fitz.open(str(src))
-            if hasattr(doc, 'is_encrypted') and doc.is_encrypted:
+            if hasattr(doc, "is_encrypted") and doc.is_encrypted:
                 metadata = DocumentMetadata(
                     source_path=str(src),
                     file_format=FileFormat.PDF,
@@ -73,10 +77,10 @@ class PDFParser(BaseParser):
                     sections=[],
                     images=[],
                     tables=[],
-                    errors=[ParseError(code='encrypted', message='PDF file is password-protected', recoverable=False)],
+                    errors=[ParseError(code="encrypted", message="PDF file is password-protected", recoverable=False)],
                     raw_text=None,
                     cache_hit=False,
-                    request_id='',
+                    request_id="",
                 )
         except Exception as exc:
             metadata = DocumentMetadata(
@@ -88,10 +92,10 @@ class PDFParser(BaseParser):
                 image_count=0,
                 has_toc=False,
             )
-            error_code = 'corrupt'
+            error_code = "corrupt"
             message = str(exc)
-            if 'encrypted' in message.lower() or 'password' in message.lower():
-                error_code = 'encrypted'
+            if "encrypted" in message.lower() or "password" in message.lower():
+                error_code = "encrypted"
             return ParseResult(
                 status=ParseStatus.FAILED,
                 metadata=metadata,
@@ -101,7 +105,7 @@ class PDFParser(BaseParser):
                 errors=[ParseError(code=error_code, message=message, recoverable=False)],
                 raw_text=None,
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
 
         sections: list[Section] = []
@@ -132,15 +136,15 @@ class PDFParser(BaseParser):
                 if block.get("type") != 0:
                     continue
                 block_text = "\n".join(
-                    span.get("text", "")
-                    for line in block.get("lines", [])
-                    for span in line.get("spans", [])
+                    span.get("text", "") for line in block.get("lines", []) for span in line.get("spans", [])
                 )
                 block_text = normalize_text(block_text.strip())
                 if not block_text:
                     continue
 
-                span_sizes = [span.get("size", 0.0) for line in block.get("lines", []) for span in line.get("spans", [])]
+                span_sizes = [
+                    span.get("size", 0.0) for line in block.get("lines", []) for span in line.get("spans", [])
+                ]
                 avg_size = sum(span_sizes) / len(span_sizes) if span_sizes else 0.0
                 is_heading = (median_size > 0 and avg_size >= 1.3 * median_size) or block_text.isupper()
                 section_type = SectionType.HEADING if is_heading else SectionType.PARAGRAPH
@@ -176,14 +180,16 @@ class PDFParser(BaseParser):
                         format=fmt,
                         size_bytes=len(img_bytes),
                         base64_data=b64,
-                        description_hint=f"Image {image_index+1} on page {page_num+1}",
+                        description_hint=f"Image {image_index + 1} on page {page_num + 1}",
                         confidence=1.0,
                         alt_text=None,
                     )
                     images.append(image_obj)
                     image_index += 1
                 except Exception as exc:
-                    parse_errors.append(ParseError(code="image_extract_failed", message=str(exc), page=page_num + 1, recoverable=True))
+                    parse_errors.append(
+                        ParseError(code="image_extract_failed", message=str(exc), page=page_num + 1, recoverable=True)
+                    )
 
         # Table extraction via pdfplumber
         if pdfplumber is not None:
@@ -207,7 +213,17 @@ class PDFParser(BaseParser):
                             cells: list[TableCell] = []
                             for ri, row in enumerate(cleaned):
                                 for ci, val in enumerate(row):
-                                    cells.append(TableCell(row=ri, col=ci, value=str(val), raw_value=val, colspan=1, rowspan=1, is_header=(ri == 0)))
+                                    cells.append(
+                                        TableCell(
+                                            row=ri,
+                                            col=ci,
+                                            value=str(val),
+                                            raw_value=val,
+                                            colspan=1,
+                                            rowspan=1,
+                                            is_header=(ri == 0),
+                                        )
+                                    )
 
                             table_obj = TableResult(
                                 index=table_index,
@@ -227,7 +243,9 @@ class PDFParser(BaseParser):
                             tables.append(table_obj)
                             table_index += 1
             except Exception as exc:
-                parse_errors.append(ParseError(code="table_extract_failed", message=str(exc), page=None, recoverable=True))
+                parse_errors.append(
+                    ParseError(code="table_extract_failed", message=str(exc), page=None, recoverable=True)
+                )
         else:
             # no pdfplumber installed; table extraction unavailable
             pass
@@ -246,10 +264,10 @@ class PDFParser(BaseParser):
             has_toc=any(s.type == SectionType.HEADING for s in sections),
             toc=[],
             parse_duration_ms=(time.time() - start) * 1000,
-            parser_version=fitz.__version__,
+            parser_version=getattr(fitz, "__version__", "n/a"),
         )
 
-        return ParseResult(
+        result = ParseResult(
             status=ParseStatus.OK,
             metadata=metadata,
             sections=sections,
@@ -261,11 +279,24 @@ class PDFParser(BaseParser):
             request_id="",
         )
 
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
+
+        return result
+
     async def stream_sections(self, path: Path, options: dict | None = None):
         src = Path(path)
         try:
-            enforce_file_size(src, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'), stream_mode=True)
-        except FileOversizeError as exc:
+            enforce_file_size(
+                src,
+                max_size_mb=(options or {}).get("max_size_mb"),
+                max_stream_size_mb=(options or {}).get("max_stream_file_size_mb"),
+                stream_mode=True,
+            )
+        except FileOversizeError:
             # Too big even for streaming, yield nothing and return.
             return
 
@@ -297,15 +328,15 @@ class PDFParser(BaseParser):
                     continue
                 block_text = normalize_text(
                     "\n".join(
-                        span.get("text", "")
-                        for line in block.get("lines", [])
-                        for span in line.get("spans", [])
+                        span.get("text", "") for line in block.get("lines", []) for span in line.get("spans", [])
                     ).strip()
                 )
                 if not block_text:
                     continue
 
-                span_sizes = [span.get("size", 0.0) for line in block.get("lines", []) for span in line.get("spans", [])]
+                span_sizes = [
+                    span.get("size", 0.0) for line in block.get("lines", []) for span in line.get("spans", [])
+                ]
                 avg_size = sum(span_sizes) / len(span_sizes) if span_sizes else 0.0
                 is_heading = (median_size > 0 and avg_size >= 1.3 * median_size) or block_text.isupper()
                 section_type = SectionType.HEADING if is_heading else SectionType.PARAGRAPH
@@ -331,30 +362,36 @@ class PDFParser(BaseParser):
     async def parse_metadata(self, path: Path) -> DocumentMetadata:
         src = Path(path)
         doc = fitz.open(str(src))
-        info = doc.metadata
+        try:
+            info = doc.metadata
 
-        created_at: Optional[str] = info.get("creationDate")
-        modified_at: Optional[str] = info.get("modDate")
+            created_at: Optional[str] = info.get("creationDate")
+            modified_at: Optional[str] = info.get("modDate")
 
-        page_count = doc.page_count
+            page_count = doc.page_count
 
-        return DocumentMetadata(
-            source_path=str(src),
-            file_format=FileFormat.PDF,
-            file_size_bytes=src.stat().st_size,
-            title=info.get("title") or None,
-            author=info.get("author") or None,
-            subject=info.get("subject") or None,
-            keywords=info.get("keywords", "").split(",") if info.get("keywords") else [],
-            created_at=created_at,
-            modified_at=modified_at,
-            producer=info.get("producer") or None,
-            page_count=page_count,
-            section_count=0,
-            table_count=0,
-            image_count=0,
-            has_toc=False,
-            toc=[],
-            parse_duration_ms=0.0,
-            parser_version=fitz.__version__,
-        )
+            return DocumentMetadata(
+                source_path=str(src),
+                file_format=FileFormat.PDF,
+                file_size_bytes=src.stat().st_size,
+                title=info.get("title") or None,
+                author=info.get("author") or None,
+                subject=info.get("subject") or None,
+                keywords=info.get("keywords", "").split(",") if info.get("keywords") else [],
+                created_at=created_at,
+                modified_at=modified_at,
+                producer=info.get("producer") or None,
+                page_count=page_count,
+                section_count=0,
+                table_count=0,
+                image_count=0,
+                has_toc=False,
+                toc=[],
+                parse_duration_ms=0.0,
+                parser_version=getattr(fitz, "__version__", "n/a"),
+            )
+        finally:
+            try:
+                doc.close()
+            except Exception:
+                pass

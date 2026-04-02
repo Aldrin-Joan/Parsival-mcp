@@ -10,7 +10,6 @@ from src.parsers.streaming_chunk_emitter import stream_chunks_from_sections
 
 
 class BaseParser(ABC):
-
     @abstractmethod
     async def parse(self, path: Path, options: dict | None = None) -> ParseResult:
         raise NotImplementedError
@@ -19,16 +18,12 @@ class BaseParser(ABC):
     async def parse_metadata(self, path: Path) -> DocumentMetadata:
         raise NotImplementedError
 
-    async def stream_sections(
-        self, path: Path, options: dict | None = None
-    ) -> AsyncIterator[Section]:
+    async def stream_sections(self, path: Path, options: dict | None = None) -> AsyncIterator[Section]:
         result = await self.parse(path, options)
         for section in result.sections:
             yield section
 
-    async def stream_chunks(
-        self, path: Path, options: dict | None = None
-    ) -> AsyncIterator["StreamChunk"]:
+    async def stream_chunks(self, path: Path, options: dict | None = None) -> AsyncIterator["StreamChunk"]:
         metadata = DocumentMetadata(
             source_path=str(path),
             file_format="unknown",

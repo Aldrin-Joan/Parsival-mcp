@@ -13,6 +13,7 @@ logger = get_logger(__name__)
 
 # In-memory index cache: {path: {mtime: float, bm25: BM25, sections: List}}
 _INDEX_CACHE: Dict[str, Any] = {}
+_INDEX_LOCK = __import__("threading").Lock()
 
 
 def _tokenize(text: str) -> List[str]:
@@ -24,6 +25,7 @@ def _tokenize(text: str) -> List[str]:
 async def _get_or_create_index(path: str) -> Dict[str, Any]:
     """Retrieves or builds the BM25 index for a file."""
     from src.app import get_cache
+
     safe_path = validate_safe_path(path)
     mtime = safe_path.stat().st_mtime
 
@@ -46,39 +48,25 @@ async def _get_or_create_index(path: str) -> Dict[str, Any]:
     docs = [_tokenize(s.content) for s in sections]
     bm25 = BM25Okapi(docs) if docs else None
 
-    _INDEX_CACHE[path] = {"mtime": mtime, "sections": sections, "bm25": bm25}
-    return _INDEX_CACHE[path]
+    with _INDEX_LOCK:
+        _INDEX_CACHE[path] = {"mtime": mtime, "sections": sections, "bm25": bm25}
+        return _INDEX_CACHE[path]
 
 
-def _format_search_hits(
-    query_tokens: List[str],
-    sections: List[Any],
-    scores: Any,
-    top_k: int
-) -> List[SearchHit]:
+def _format_search_hits(query_tokens: List[str], sections: List[Any], scores: Any, top_k: int) -> List[SearchHit]:
     """Sorts and formats the top search hits."""
-    top_ids = sorted(
-        range(len(scores)),
-        key=lambda i: scores[i],
-        reverse=True
-    )[:top_k]
+    top_ids = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
 
     hits = []
     for i in top_ids:
         sec = sections[i]
         score = max(0.0, float(scores[i]))
-        if score <= 0:
-            continue
 
         snippet = sec.content[:200]
         offset = sec.content.lower().find(query_tokens[0])
-        hits.append(SearchHit(
-            section_index=sec.index,
-            page=sec.page,
-            snippet=snippet,
-            score=score,
-            offset=max(0, offset)
-        ))
+        hits.append(
+            SearchHit(section_index=sec.index, page=sec.page, snippet=snippet, score=score, offset=max(0, offset))
+        )
     return hits
 
 
@@ -101,5 +89,3 @@ async def search_file(path: str, query: str, top_k: int = 5) -> List[SearchHit]:
 
     scores = bm25.get_scores(tokens)
     return _format_search_hits(tokens, sections, scores, top_k)
-
-

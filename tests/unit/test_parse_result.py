@@ -1,4 +1,4 @@
-from src.models.parse_result import ParseResult, Section, ParseError
+from src.models.parse_result import ParseResult, Section
 from src.models.metadata import DocumentMetadata
 
 

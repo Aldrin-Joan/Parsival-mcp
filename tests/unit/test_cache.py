@@ -1,7 +1,7 @@
 import os
 import tempfile
 from src.core.cache import ContentHashStore
-from src.models.parse_result import ParseResult, Section
+from src.models.parse_result import ParseResult
 from src.models.metadata import DocumentMetadata
 from src.models.enums import ParseStatus
 
@@ -14,9 +14,21 @@ def test_cache_get_set_invalidate():
         path = f.name
 
     try:
-        key = cache.make_cache_key(path, options={"output_format": "markdown", "page_range": [1, 1], "include_images": True})
+        key = cache.make_cache_key(
+            path, options={"output_format": "markdown", "page_range": [1, 1], "include_images": True}
+        )
         meta = DocumentMetadata(source_path=path, file_format="text")
-        result = ParseResult(status=ParseStatus.OK, metadata=meta, sections=[], images=[], tables=[], errors=[], raw_text="", cache_hit=False, request_id="1")
+        result = ParseResult(
+            status=ParseStatus.OK,
+            metadata=meta,
+            sections=[],
+            images=[],
+            tables=[],
+            errors=[],
+            raw_text="",
+            cache_hit=False,
+            request_id="1",
+        )
 
         import asyncio
 
@@ -61,9 +73,21 @@ def test_cache_redis_hit_miss(monkeypatch):
         path = f.name
 
     try:
-        key = cache.make_cache_key(path, options={"output_format": "markdown", "page_range": [1, 1], "include_images": True})
+        key = cache.make_cache_key(
+            path, options={"output_format": "markdown", "page_range": [1, 1], "include_images": True}
+        )
         meta = DocumentMetadata(source_path=path, file_format="text")
-        result = ParseResult(status=ParseStatus.OK, metadata=meta, sections=[], images=[], tables=[], errors=[], raw_text="", cache_hit=False, request_id="1")
+        result = ParseResult(
+            status=ParseStatus.OK,
+            metadata=meta,
+            sections=[],
+            images=[],
+            tables=[],
+            errors=[],
+            raw_text="",
+            cache_hit=False,
+            request_id="1",
+        )
 
         import asyncio
 
@@ -102,9 +126,21 @@ def test_cache_redis_failure_fallback(monkeypatch):
         path = f.name
 
     try:
-        key = cache.make_cache_key(path, options={"output_format": "markdown", "page_range": [1, 1], "include_images": True})
+        key = cache.make_cache_key(
+            path, options={"output_format": "markdown", "page_range": [1, 1], "include_images": True}
+        )
         meta = DocumentMetadata(source_path=path, file_format="text")
-        result = ParseResult(status=ParseStatus.OK, metadata=meta, sections=[], images=[], tables=[], errors=[], raw_text="", cache_hit=False, request_id="1")
+        result = ParseResult(
+            status=ParseStatus.OK,
+            metadata=meta,
+            sections=[],
+            images=[],
+            tables=[],
+            errors=[],
+            raw_text="",
+            cache_hit=False,
+            request_id="1",
+        )
 
         import asyncio
 

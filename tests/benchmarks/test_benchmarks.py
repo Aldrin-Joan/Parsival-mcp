@@ -30,6 +30,7 @@ async def test_benchmark_parse_latency_small(request, tmp_path):
     else:
         # Fallback behavior when pytest-benchmark not installed
         import time
+
         durations = []
         for _ in range(5):
             start = time.perf_counter()
@@ -54,6 +55,7 @@ async def test_benchmark_parse_latency_large(request, tmp_path):
         await benchmark(bench_fn)
     else:
         import time
+
         durations = []
         for _ in range(3):
             start = time.perf_counter()
@@ -84,6 +86,7 @@ async def test_benchmark_streaming_first_chunk(request, tmp_path):
         await benchmark(bench_fn)
     else:
         import time
+
         durations = []
         for _ in range(5):
             start = time.perf_counter()
@@ -109,6 +112,7 @@ async def test_benchmark_throughput_concurrent(request, tmp_path):
         await benchmark(bench_fn)
     else:
         import time
+
         durations = []
         for _ in range(5):
             start = time.perf_counter()

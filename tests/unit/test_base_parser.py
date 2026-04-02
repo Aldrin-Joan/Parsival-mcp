@@ -1,4 +1,3 @@
-import pytest
 from src.parsers.base import BaseParser
 
 

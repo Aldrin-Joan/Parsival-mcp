@@ -1,7 +1,6 @@
 from __future__ import annotations
-from typing import Callable
 
-from src.models.parse_result import ParseResult, Section
+from src.models.parse_result import ParseResult
 from src.models.table import TableResult
 from src.models.enums import SectionType
 
@@ -34,7 +33,6 @@ def to_gfm_table(table: TableResult) -> str:
 
 
 class MarkdownSerializer:
-
     @staticmethod
     def serialize(result: ParseResult) -> str:
         meta = result.metadata

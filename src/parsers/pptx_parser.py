@@ -1,7 +1,6 @@
 from __future__ import annotations
 import time
 from pathlib import Path
-from typing import Iterable
 
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -17,13 +16,13 @@ from src.parsers.registry import register
 
 def _shape_text(shape) -> str:
     if not shape.has_text_frame:
-        return ''
+        return ""
     texts = []
     for paragraph in shape.text_frame.paragraphs:
         text = paragraph.text.strip()
         if text:
             texts.append(text)
-    return '\n'.join(texts)
+    return "\n".join(texts)
 
 
 def _extract_table(shape, slide_number: int, index: int) -> TableResult:
@@ -33,7 +32,7 @@ def _extract_table(shape, slide_number: int, index: int) -> TableResult:
     for r_idx, row in enumerate(table.rows):
         row_values = []
         for c_idx, cell in enumerate(row.cells):
-            value = (cell.text or '').strip()
+            value = (cell.text or "").strip()
             row_values.append(value)
             cells.append(
                 TableCell(
@@ -62,8 +61,8 @@ def _extract_table(shape, slide_number: int, index: int) -> TableResult:
         col_count=len(headers),
         has_merged_cells=False,
         confidence=0.9,
-        confidence_reason='pptx parser',
-        markdown='',
+        confidence_reason="pptx parser",
+        markdown="",
         errors=[],
     )
 
@@ -71,8 +70,8 @@ def _extract_table(shape, slide_number: int, index: int) -> TableResult:
 def _extract_image(shape, slide_number: int, index: int) -> ImageRef:
     image = shape.image
     blob = image.blob
-    fmt = image.content_type.split('/')[-1] if image.content_type else 'png'
-    b64 = __import__('base64').b64encode(blob).decode('ascii')
+    fmt = image.content_type.split("/")[-1] if image.content_type else "png"
+    b64 = __import__("base64").b64encode(blob).decode("ascii")
     return ImageRef(
         index=index,
         page=slide_number,
@@ -81,9 +80,9 @@ def _extract_image(shape, slide_number: int, index: int) -> ImageRef:
         format=fmt,
         size_bytes=len(blob),
         base64_data=b64,
-        description_hint=f'PPTX slide {slide_number} image {index}',
+        description_hint=f"PPTX slide {slide_number} image {index}",
         confidence=1.0,
-        alt_text=getattr(shape, 'name', None),
+        alt_text=getattr(shape, "name", None),
     )
 
 
@@ -112,7 +111,7 @@ def _walk_shapes(shapes, slide_number: int, table_start: int, image_start: int, 
                 Section(
                     index=section_idx,
                     type=SectionType.TABLE,
-                    content='',
+                    content="",
                     page=slide_number,
                     level=None,
                     table=table,
@@ -130,7 +129,7 @@ def _walk_shapes(shapes, slide_number: int, table_start: int, image_start: int, 
                 Section(
                     index=section_idx,
                     type=SectionType.IMAGE,
-                    content='',
+                    content="",
                     page=slide_number,
                     level=None,
                     images=[img],
@@ -144,7 +143,7 @@ def _walk_shapes(shapes, slide_number: int, table_start: int, image_start: int, 
         text = _shape_text(shape)
         if text:
             stype = SectionType.PARAGRAPH
-            if getattr(shape, 'is_placeholder', False) and 'title' in (shape.name or '').lower():
+            if getattr(shape, "is_placeholder", False) and "title" in (shape.name or "").lower():
                 stype = SectionType.HEADING
             sections.append(
                 Section(
@@ -163,7 +162,6 @@ def _walk_shapes(shapes, slide_number: int, table_start: int, image_start: int, 
 
 @register(FileFormat.PPTX)
 class PptxParser(BaseParser):
-
     async def parse(self, path: Path, options: dict | None = None) -> ParseResult:
         src = Path(path)
         if not src.exists():
@@ -173,10 +171,10 @@ class PptxParser(BaseParser):
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code='not_found', message='PPTX file not found', recoverable=False)],
-                raw_text='',
+                errors=[ParseError(code="not_found", message="PPTX file not found", recoverable=False)],
+                raw_text="",
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
 
         start = time.time()
@@ -216,7 +214,7 @@ class PptxParser(BaseParser):
             tables.extend(t)
             images.extend(i)
 
-            if hasattr(slide, 'notes_slide') and slide.has_notes_slide:
+            if hasattr(slide, "notes_slide") and slide.has_notes_slide:
                 notes = slide.notes_slide.notes_text_frame.text.strip()
                 if notes:
                     sections.append(
@@ -238,7 +236,7 @@ class PptxParser(BaseParser):
             title=prs.core_properties.title,
             author=prs.core_properties.author,
             subject=prs.core_properties.subject,
-            keywords=(prs.core_properties.keywords.split(',') if prs.core_properties.keywords else []),
+            keywords=(prs.core_properties.keywords.split(",") if prs.core_properties.keywords else []),
             page_count=len(prs.slides),
             section_count=len(sections),
             table_count=len(tables),
@@ -249,7 +247,7 @@ class PptxParser(BaseParser):
             char_count=sum(len(s.content) for s in sections),
             reading_time_minutes=None,
             parse_duration_ms=(time.time() - start) * 1000,
-            parser_version='pptx',
+            parser_version="pptx",
         )
 
         return ParseResult(
@@ -259,15 +257,15 @@ class PptxParser(BaseParser):
             images=images,
             tables=tables,
             errors=errors,
-            raw_text='\n'.join(s.content for s in sections if s.content),
+            raw_text="\n".join(s.content for s in sections if s.content),
             cache_hit=False,
-            request_id='',
+            request_id="",
         )
 
     async def parse_metadata(self, path: Path) -> DocumentMetadata:
         src = Path(path)
         if not src.exists():
-            raise FileNotFoundError('PPTX file not found')
+            raise FileNotFoundError("PPTX file not found")
 
         prs = Presentation(str(src))
         return DocumentMetadata(
@@ -277,7 +275,7 @@ class PptxParser(BaseParser):
             title=prs.core_properties.title,
             author=prs.core_properties.author,
             subject=prs.core_properties.subject,
-            keywords=(prs.core_properties.keywords.split(',') if prs.core_properties.keywords else []),
+            keywords=(prs.core_properties.keywords.split(",") if prs.core_properties.keywords else []),
             page_count=len(prs.slides),
             section_count=0,
             table_count=0,
@@ -285,5 +283,5 @@ class PptxParser(BaseParser):
             has_toc=False,
             toc=[],
             parse_duration_ms=0.0,
-            parser_version='pptx',
+            parser_version="pptx",
         )

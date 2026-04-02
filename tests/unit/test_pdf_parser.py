@@ -21,7 +21,7 @@ def make_pdf_file(text: str):
     doc = fitz.open()
     page = doc.new_page()
     page.insert_text((72, 72), text)
-    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
     tmp.close()
     doc.save(tmp.name)
     doc.close()
@@ -30,9 +30,10 @@ def make_pdf_file(text: str):
 
 import pytest
 
+
 @pytest.mark.asyncio
 async def test_pdf_metadata():
-    path = make_pdf_file('Hello World')
+    path = make_pdf_file("Hello World")
     try:
         parser = PDFParser()
         metadata = await parser.parse_metadata(Path(path))
@@ -42,9 +43,10 @@ async def test_pdf_metadata():
     finally:
         os.unlink(path)
 
+
 @pytest.mark.asyncio
 async def test_pdf_parser_text():
-    path = make_pdf_file('Hello World')
+    path = make_pdf_file("Hello World")
     try:
         parser = PDFParser()
         result = await parser.parse(Path(path))
@@ -59,28 +61,28 @@ async def test_pdf_parser_text():
 
 @pytest.mark.asyncio
 async def test_pdf_parser_corrupt_file():
-    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
     tmp.close()
-    with open(tmp.name, 'wb') as f:
-        f.write(b'%PDF-1.4\n%\x00\x00\x00\ncorrupt content not pdf')
+    with open(tmp.name, "wb") as f:
+        f.write(b"%PDF-1.4\n%\x00\x00\x00\ncorrupt content not pdf")
 
     try:
         parser = PDFParser()
         result = await parser.parse(Path(tmp.name))
         assert result.status == ParseStatus.FAILED
         assert result.errors
-        assert result.errors[0].code in ('corrupt', 'encrypted')
+        assert result.errors[0].code in ("corrupt", "encrypted")
     finally:
         os.unlink(tmp.name)
 
 
 @pytest.mark.asyncio
 async def test_pdf_parser_encrypted_file():
-    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
     tmp.close()
     doc = fitz.open()
     doc.new_page()
-    doc.save(tmp.name, encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw='owner', user_pw='user')
+    doc.save(tmp.name, encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw="owner", user_pw="user")
     doc.close()
 
     try:
@@ -88,7 +90,7 @@ async def test_pdf_parser_encrypted_file():
         result = await parser.parse(Path(tmp.name))
         assert result.status == ParseStatus.FAILED
         assert result.errors
-        assert result.errors[0].code == 'encrypted'
+        assert result.errors[0].code == "encrypted"
     finally:
         os.unlink(tmp.name)
 
@@ -98,12 +100,12 @@ async def test_pdf_parser_image_extraction():
     if Image is None:
         pytest.skip("Pillow required for image creation")
 
-    path = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False).name
+    path = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False).name
     try:
         # create test image
-        img = Image.new('RGB', (10, 10), color='red')
-        buf = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-        img.save(buf.name, format='PNG')
+        img = Image.new("RGB", (10, 10), color="red")
+        buf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        img.save(buf.name, format="PNG")
         buf.close()
 
         doc = fitz.open()
@@ -123,6 +125,7 @@ async def test_pdf_parser_image_extraction():
         os.unlink(path)
         os.unlink(buf.name)
 
+
 @pytest.mark.asyncio
 async def test_pdf_parser_table_extraction(monkeypatch):
     if pdfplumber is None:
@@ -130,7 +133,7 @@ async def test_pdf_parser_table_extraction(monkeypatch):
 
     class DummyPage:
         def extract_tables(self):
-            return [[['A', 'B'], ['1', '2']]]
+            return [[["A", "B"], ["1", "2"]]]
 
     class DummyPbDoc:
         def __init__(self):
@@ -142,9 +145,9 @@ async def test_pdf_parser_table_extraction(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(pdfplumber, 'open', lambda path: DummyPbDoc())
+    monkeypatch.setattr(pdfplumber, "open", lambda path: DummyPbDoc())
 
-    path = make_pdf_file('no table parallel')
+    path = make_pdf_file("no table parallel")
     try:
         parser = PDFParser()
         result = await parser.parse(Path(path))
@@ -154,7 +157,7 @@ async def test_pdf_parser_table_extraction(monkeypatch):
         table = result.tables[0]
         assert table.row_count == 1
         assert table.col_count == 2
-        assert table.headers == ['A', 'B']
+        assert table.headers == ["A", "B"]
     finally:
         os.unlink(path)
 
@@ -164,8 +167,8 @@ async def test_pdf_stream_sections_honors_paging_and_timing():
     doc = fitz.open()
     for i in range(3):
         page = doc.new_page()
-        page.insert_text((72, 72), f"Page {i+1} text")
-    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+        page.insert_text((72, 72), f"Page {i + 1} text")
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
     tmp.close()
     doc.save(tmp.name)
     doc.close()
@@ -199,4 +202,3 @@ async def test_pdf_stream_sections_honors_paging_and_timing():
         assert total_time >= 0.6
     finally:
         os.unlink(tmp.name)
-

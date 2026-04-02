@@ -21,6 +21,7 @@ def register(fmt: FileFormat):
         instance = cls()
         _REGISTRY[fmt] = instance
         return cls
+
     return decorator
 
 

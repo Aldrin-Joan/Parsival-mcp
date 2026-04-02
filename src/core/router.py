@@ -33,7 +33,6 @@ class UnsupportedFormatError(Exception):
 
 
 class FormatRouter:
-
     def __init__(self):
         try:
             import magic  # type: ignore

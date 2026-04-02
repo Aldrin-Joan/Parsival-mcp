@@ -1,4 +1,7 @@
+import tempfile
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_ALLOWED_DIRECTORIES = [".", tempfile.gettempdir()]
 
 
 class Settings(BaseSettings):
@@ -21,7 +24,7 @@ class Settings(BaseSettings):
     MAX_LIBREOFFICE_WORKERS: int = 2
     SUBPROCESS_TIMEOUT_SEC: int = 30
 
-    ALLOWED_DIRECTORIES: list[str] = ["."]
+    ALLOWED_DIRECTORIES: list[str] = _DEFAULT_ALLOWED_DIRECTORIES
     WORKSPACE_ROOT: str = "."
 
 

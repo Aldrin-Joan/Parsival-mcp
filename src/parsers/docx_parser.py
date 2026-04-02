@@ -1,6 +1,5 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional
 
 import docx
 from docx.oxml.ns import qn
@@ -17,13 +16,16 @@ from src.parsers.utils import FileOversizeError, enforce_file_size, normalize_te
 
 @register(FileFormat.DOCX)
 class DocxParser(BaseParser):
-
     async def parse(self, path: Path, options: dict | None = None) -> ParseResult:
         src = Path(path)
-        start = __import__('time').time()
+        start = __import__("time").time()
 
         try:
-            enforce_file_size(src, max_size_mb=(options or {}).get('max_size_mb'), max_stream_size_mb=(options or {}).get('max_stream_file_size_mb'))
+            enforce_file_size(
+                src,
+                max_size_mb=(options or {}).get("max_size_mb"),
+                max_stream_size_mb=(options or {}).get("max_stream_file_size_mb"),
+            )
             if is_docx_encrypted(src):
                 metadata = DocumentMetadata(
                     source_path=str(src),
@@ -40,10 +42,10 @@ class DocxParser(BaseParser):
                     sections=[],
                     images=[],
                     tables=[],
-                    errors=[ParseError(code='encrypted', message='DOCX file is password-encrypted', recoverable=False)],
+                    errors=[ParseError(code="encrypted", message="DOCX file is password-encrypted", recoverable=False)],
                     raw_text=None,
                     cache_hit=False,
-                    request_id='',
+                    request_id="",
                 )
 
             doc = docx.Document(str(src))
@@ -63,16 +65,16 @@ class DocxParser(BaseParser):
                 sections=[],
                 images=[],
                 tables=[],
-                errors=[ParseError(code='oversize', message=str(exc), recoverable=False)],
-                raw_text='',
+                errors=[ParseError(code="oversize", message=str(exc), recoverable=False)],
+                raw_text="",
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
         except Exception as exc:
-            code = 'corrupt'
+            code = "corrupt"
             msg = str(exc)
-            if 'encrypted' in msg.lower() or 'password' in msg.lower():
-                code = 'encrypted'
+            if "encrypted" in msg.lower() or "password" in msg.lower():
+                code = "encrypted"
             metadata = DocumentMetadata(
                 source_path=str(src),
                 file_format=FileFormat.DOCX,
@@ -91,7 +93,7 @@ class DocxParser(BaseParser):
                 errors=[ParseError(code=code, message=msg, recoverable=False)],
                 raw_text=None,
                 cache_hit=False,
-                request_id='',
+                request_id="",
             )
 
         sections: list[Section] = []
@@ -105,20 +107,20 @@ class DocxParser(BaseParser):
 
         # Strict XML traversal for order preservation
         for child in doc.element.body:
-            if child.tag == qn('w:p'):
+            if child.tag == qn("w:p"):
                 paragraph = docx.text.paragraph.Paragraph(child, doc)
                 text = paragraph.text.strip()
                 if not text:
                     continue
 
-                style_name = paragraph.style.name if paragraph.style is not None else ''
-                style_lower = style_name.lower() if style_name else ''
-                is_heading = 'heading' in style_lower or 'title' in style_lower
+                style_name = paragraph.style.name if paragraph.style is not None else ""
+                style_lower = style_name.lower() if style_name else ""
+                is_heading = "heading" in style_lower or "title" in style_lower
                 section_type = SectionType.HEADING if is_heading else SectionType.PARAGRAPH
                 level = 1
-                if is_heading and style_lower.startswith('heading'):
+                if is_heading and style_lower.startswith("heading"):
                     try:
-                        level = int(''.join(filter(str.isdigit, style_lower)) or '1')
+                        level = int("".join(filter(str.isdigit, style_lower)) or "1")
                     except Exception:
                         level = 1
 
@@ -129,12 +131,12 @@ class DocxParser(BaseParser):
                         content=normalize_text(text),
                         page=None,
                         level=level if is_heading else None,
-                        metadata={'style': style_name},
+                        metadata={"style": style_name},
                     )
                 )
                 section_idx += 1
 
-            elif child.tag == qn('w:tbl'):
+            elif child.tag == qn("w:tbl"):
                 table = docx.table.Table(child, doc)
                 rows_data = []
                 for r_id, row in enumerate(table.rows):
@@ -149,7 +151,17 @@ class DocxParser(BaseParser):
                 cells = []
                 for r_id, row in enumerate(rows_data):
                     for c_id, value in enumerate(row):
-                        cells.append(TableCell(row=r_id, col=c_id, value=normalize_text(str(value)), raw_value=value, colspan=1, rowspan=1, is_header=(r_id == 0)))
+                        cells.append(
+                            TableCell(
+                                row=r_id,
+                                col=c_id,
+                                value=normalize_text(str(value)),
+                                raw_value=value,
+                                colspan=1,
+                                rowspan=1,
+                                is_header=(r_id == 0),
+                            )
+                        )
 
                 tables.append(
                     TableResult(
@@ -163,24 +175,24 @@ class DocxParser(BaseParser):
                         col_count=len(headers),
                         has_merged_cells=False,
                         confidence=0.9,
-                        confidence_reason='docx parser',
-                        markdown='',
+                        confidence_reason="docx parser",
+                        markdown="",
                         errors=[],
                     )
                 )
                 table_idx += 1
 
-            elif child.tag == qn('w:pict') or child.tag == qn('w:drawing'):
+            elif child.tag == qn("w:pict") or child.tag == qn("w:drawing"):
                 # Handle images embedded in drawing frames by scanning document images
                 pass
 
         # Extract images from inline shapes / part images
         for rel in doc.part.rels.values():
-            if 'image' in rel.reltype:
+            if "image" in rel.reltype:
                 try:
                     img_bytes = rel.target_part.blob
-                    fmt = rel.target_part.content_type.split('/')[-1]
-                    b64 = __import__('base64').b64encode(img_bytes).decode('ascii')
+                    fmt = rel.target_part.content_type.split("/")[-1]
+                    b64 = __import__("base64").b64encode(img_bytes).decode("ascii")
                     images.append(
                         ImageRef(
                             index=image_idx,
@@ -190,14 +202,14 @@ class DocxParser(BaseParser):
                             format=fmt,
                             size_bytes=len(img_bytes),
                             base64_data=b64,
-                            description_hint=f'DOCX image {image_idx + 1}',
+                            description_hint=f"DOCX image {image_idx + 1}",
                             confidence=1.0,
                             alt_text=None,
                         )
                     )
                     image_idx += 1
                 except Exception as exc:
-                    errors.append(ParseError(code='image_extract_failed', message=str(exc), recoverable=True))
+                    errors.append(ParseError(code="image_extract_failed", message=str(exc), recoverable=True))
 
         metadata = DocumentMetadata(
             source_path=str(src),
@@ -212,11 +224,11 @@ class DocxParser(BaseParser):
             image_count=len(images),
             has_toc=any(s.type == SectionType.HEADING for s in sections),
             toc=[],
-            parse_duration_ms=(__import__('time').time() - start) * 1000,
+            parse_duration_ms=(__import__("time").time() - start) * 1000,
             parser_version=docx.__version__,
         )
 
-        raw_text = '\n'.join([normalize_text(s.content) for s in sections])
+        raw_text = "\n".join([normalize_text(s.content) for s in sections])
 
         return ParseResult(
             status=ParseStatus.OK,
@@ -227,7 +239,7 @@ class DocxParser(BaseParser):
             errors=errors,
             raw_text=normalize_text(raw_text),
             cache_hit=False,
-            request_id='',
+            request_id="",
         )
 
     async def parse_metadata(self, path: Path) -> DocumentMetadata:
@@ -242,7 +254,7 @@ class DocxParser(BaseParser):
             title=props.title,
             author=props.author,
             subject=props.subject,
-            keywords=props.keywords.split(',') if props.keywords else [],
+            keywords=props.keywords.split(",") if props.keywords else [],
             created_at=props.created.isoformat() if props.created else None,
             modified_at=props.modified.isoformat() if props.modified else None,
             producer=None,

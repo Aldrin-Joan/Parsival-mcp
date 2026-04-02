@@ -1,4 +1,3 @@
-import os
 import time
 from pathlib import Path
 
@@ -12,8 +11,8 @@ from src.models.enums import FileFormat
 
 @pytest.mark.asyncio
 async def test_get_metadata_text_file(tmp_path):
-    p = tmp_path / 'sample.txt'
-    p.write_text('Hello world', encoding='utf-8')
+    p = tmp_path / "sample.txt"
+    p.write_text("Hello world", encoding="utf-8")
 
     metadata = await get_metadata(str(p))
     assert metadata.file_format == FileFormat.TEXT
@@ -23,37 +22,38 @@ async def test_get_metadata_text_file(tmp_path):
 
 @pytest.mark.asyncio
 async def test_get_metadata_does_not_run_full_parse(tmp_path, monkeypatch):
-    p = tmp_path / 'sample.txt'
-    p.write_text('Only metadata', encoding='utf-8')
+    p = tmp_path / "sample.txt"
+    p.write_text("Only metadata", encoding="utf-8")
 
     # ensure parser.parse is NOT called
     fmt = FormatRouter().detect(str(p))
     parser = get_parser(fmt)
 
-    called = {'parse': False}
+    called = {"parse": False}
 
     orig_parse = parser.parse
 
     async def fake_parse(path):
-        called['parse'] = True
+        called["parse"] = True
         return await orig_parse(path)
 
-    monkeypatch.setattr(parser, 'parse', fake_parse)
+    monkeypatch.setattr(parser, "parse", fake_parse)
 
     await get_metadata(str(p))
-    assert not called['parse']
+    assert not called["parse"]
 
 
 @pytest.mark.asyncio
 async def test_get_metadata_large_pdf_benchmark(tmp_path, monkeypatch):
     # Use a fake PDF parser to avoid needing a real large PDF file
-    fake_pdf_path = tmp_path / 'large.pdf'
-    fake_pdf_path.write_bytes(b'%PDF-1.4\n%Dummy')
+    fake_pdf_path = tmp_path / "large.pdf"
+    fake_pdf_path.write_bytes(b"%PDF-1.4\n%Dummy")
 
     class FakeParser:
         async def parse_metadata(self, path: Path):
             # Simulate quick metadata; should still be fast
             from src.models.metadata import DocumentMetadata
+
             return DocumentMetadata(
                 source_path=str(path),
                 file_format=FileFormat.PDF,
@@ -66,10 +66,10 @@ async def test_get_metadata_large_pdf_benchmark(tmp_path, monkeypatch):
                 word_count=0,
                 char_count=0,
                 parse_duration_ms=0.0,
-                parser_version='fake',
+                parser_version="fake",
             )
 
-    monkeypatch.setattr('src.parsers.registry._REGISTRY', {FileFormat.PDF: FakeParser()})
+    monkeypatch.setattr("src.parsers.registry._REGISTRY", {FileFormat.PDF: FakeParser()})
 
     start = time.perf_counter()
     metadata = await get_metadata(str(fake_pdf_path))

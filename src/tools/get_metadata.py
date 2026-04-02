@@ -33,11 +33,6 @@ async def get_metadata(path: str) -> DocumentMetadata:
 
     metadata.parse_duration_ms = duration_ms
 
-    logger.info(
-        "tool_get_metadata_complete",
-        path=str(safe_path),
-        duration_ms=duration_ms
-    )
+    logger.info("tool_get_metadata_complete", path=str(safe_path), duration_ms=duration_ms)
 
     return metadata
-

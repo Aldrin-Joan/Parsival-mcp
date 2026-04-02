@@ -27,9 +27,9 @@ def _resize_image(image_ref: ImageRef, max_dim: int) -> ImageRef:
         new_size = (int(img.width * ratio), int(img.height * ratio))
         resized = img.resize(new_size, Image.LANCZOS)
         buf = io.BytesIO()
-        fmt = (image_ref.format or 'PNG').upper()
-        resized.save(buf, format='JPEG' if fmt == 'JPG' else fmt)
-        
+        fmt = (image_ref.format or "PNG").upper()
+        resized.save(buf, format="JPEG" if fmt == "JPG" else fmt)
+
         raw = buf.getvalue()
         return ImageRef(
             index=image_ref.index,
@@ -38,9 +38,9 @@ def _resize_image(image_ref: ImageRef, max_dim: int) -> ImageRef:
             height_px=new_size[1],
             format=image_ref.format,
             size_bytes=len(raw),
-            base64_data=base64.b64encode(raw).decode('ascii'),
+            base64_data=base64.b64encode(raw).decode("ascii"),
             description_hint=image_ref.description_hint,
-            confidence=image_ref.confidence
+            confidence=image_ref.confidence,
         )
     except Exception as e:
         logger.error("image_resize_failed", index=image_ref.index, error=str(e))
@@ -48,9 +48,7 @@ def _resize_image(image_ref: ImageRef, max_dim: int) -> ImageRef:
 
 
 async def extract_images(
-    path: str,
-    page_range: Optional[Tuple[int, int]] = None,
-    max_dimension: Optional[int] = None
+    path: str, page_range: Optional[Tuple[int, int]] = None, max_dimension: Optional[int] = None
 ) -> list[ImageRef]:
     """
     Extracts images from a file with optional filtering and resizing.
@@ -80,4 +78,3 @@ async def extract_images(
 
     logger.info("tool_extract_images_complete", count=len(images))
     return images
-

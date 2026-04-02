@@ -6,7 +6,6 @@ from src.post_processors.image_extractor import ImageExtractor
 
 
 class PostProcessingPipeline:
-
     @staticmethod
     def run(result: ParseResult) -> ParseResult:
         # Strict order: metadata -> structure (implicit) -> tables -> images -> final normalization

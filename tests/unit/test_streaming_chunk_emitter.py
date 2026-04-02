@@ -1,5 +1,4 @@
 import asyncio
-import tempfile
 import pytest
 from src.parsers.streaming_chunk_emitter import StreamingChunkEmitter
 from src.models.parse_result import Section
@@ -33,7 +32,9 @@ async def test_streaming_chunk_emitter_backpressure_and_order():
         has_toc=False,
     )
 
-    emitter = StreamingChunkEmitter(_generate_sections(total_sections), metadata=metadata, request_id="test123", maxsize=8)
+    emitter = StreamingChunkEmitter(
+        _generate_sections(total_sections), metadata=metadata, request_id="test123", maxsize=8
+    )
     seen_contents = []
     seen_page_order = []
 

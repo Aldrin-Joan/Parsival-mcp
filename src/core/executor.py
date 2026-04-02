@@ -13,17 +13,17 @@ CPU_COUNT = os.cpu_count() or 1
 MAX_WORKERS = min(settings.PROCESS_POOL_SIZE, max(1, CPU_COUNT - 1))
 
 # avoid oversubscription for multithreaded libs
-os.environ.setdefault('OMP_NUM_THREADS', '1')
-os.environ.setdefault('MKL_NUM_THREADS', '1')
-os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
-os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 _executor: ProcessPoolExecutor | None = None
 
 
 def get_process_pool() -> ProcessPoolExecutor:
     global _executor
-    if _executor is None or (hasattr(_executor, '_shutdown') and _executor._shutdown):
+    if _executor is None or (hasattr(_executor, "_shutdown") and _executor._shutdown):
         _executor = ProcessPoolExecutor(max_workers=MAX_WORKERS)
     return _executor
 

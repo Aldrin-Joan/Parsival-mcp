@@ -11,26 +11,19 @@ logger = get_logger(__name__)
 def _to_gfm(table: TableResult) -> str:
     """Converts a TableResult to GitHub Flavored Markdown."""
     if not table.headers:
-        return ''
+        return ""
 
     def escape(cell: str) -> str:
-        return str(cell).replace('|', '\\|').replace('\n', '<br>')
+        return str(cell).replace("|", "\\|").replace("\n", "<br>")
 
-    header = '| ' + ' | '.join(escape(c) for c in table.headers) + ' |'
-    separator = '| ' + ' | '.join('---' for _ in table.headers) + ' |'
-    rows = [
-        '| ' + ' | '.join(escape(c) for c in r) + ' |'
-        for r in table.rows
-    ]
+    header = "| " + " | ".join(escape(c) for c in table.headers) + " |"
+    separator = "| " + " | ".join("---" for _ in table.headers) + " |"
+    rows = ["| " + " | ".join(escape(c) for c in r) + " |" for r in table.rows]
 
-    return '\n'.join([header, separator] + rows)
+    return "\n".join([header, separator] + rows)
 
 
-async def extract_table(
-    path: str,
-    table_index: int = 1,
-    sheet_name: Optional[str] = None
-) -> TableResult:
+async def extract_table(path: str, table_index: int = 1, sheet_name: Optional[str] = None) -> TableResult:
     """
     Extracts a specific table from a file.
 
@@ -55,15 +48,14 @@ async def extract_table(
 
     if not tables:
         logger.warning("tool_extract_table_none", path=str(safe_path))
-        raise IndexError('No tables found for given filter')
+        raise IndexError("No tables found for given filter")
 
     idx = table_index - 1
     if idx < 0 or idx >= len(tables):
-        raise IndexError(f'table_index {table_index} out of range (1..{len(tables)})')
+        raise IndexError(f"table_index {table_index} out of range (1..{len(tables)})")
 
     table = tables[idx]
     table.markdown = _to_gfm(table)
 
     logger.info("tool_extract_table_complete", path=str(safe_path), rows=table.row_count)
     return table
-

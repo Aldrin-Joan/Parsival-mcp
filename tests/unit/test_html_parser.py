@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 
 from src.parsers.html_parser import HtmlParser
 from src.models.enums import FileFormat, ParseStatus, SectionType
@@ -27,20 +26,20 @@ async def test_html_parser_clean_html(tmp_path):
     </html>
     """
 
-    f = tmp_path / 'clean.html'
-    f.write_text(html, encoding='utf-8')
+    f = tmp_path / "clean.html"
+    f.write_text(html, encoding="utf-8")
 
     parser = HtmlParser()
     result = await parser.parse(f)
 
     assert result.status == ParseStatus.OK
     assert result.metadata.file_format == FileFormat.HTML
-    assert result.metadata.title == 'Test Page'
-    assert result.metadata.author == 'Author Name'
+    assert result.metadata.title == "Test Page"
+    assert result.metadata.author == "Author Name"
     assert result.metadata.table_count == 1
     assert result.metadata.image_count == 1
-    assert any(s.type == SectionType.HEADING and 'Main Title' in s.content for s in result.sections)
-    assert 'First paragraph.' in result.raw_text
+    assert any(s.type == SectionType.HEADING and "Main Title" in s.content for s in result.sections)
+    assert "First paragraph." in result.raw_text
 
 
 @pytest.mark.asyncio
@@ -55,16 +54,16 @@ async def test_html_parser_broken_html(tmp_path):
       </body>
     </html>
     """
-    f = tmp_path / 'broken.html'
-    f.write_text(html, encoding='utf-8')
+    f = tmp_path / "broken.html"
+    f.write_text(html, encoding="utf-8")
 
     parser = HtmlParser()
     result = await parser.parse(f)
 
     assert result.status in (ParseStatus.OK, ParseStatus.PARTIAL)
-    assert result.metadata.title == 'Broken'
+    assert result.metadata.title == "Broken"
     assert result.metadata.table_count == 1
-    assert 'Text' in result.raw_text
+    assert "Text" in result.raw_text
 
 
 @pytest.mark.asyncio
@@ -76,15 +75,15 @@ async def test_html_parser_scripts_styles_removed(tmp_path):
       <p>Visible</p>
     </body></html>
     """
-    f = tmp_path / 'script_style.html'
-    f.write_text(html, encoding='utf-8')
+    f = tmp_path / "script_style.html"
+    f.write_text(html, encoding="utf-8")
 
     parser = HtmlParser()
     result = await parser.parse(f)
 
-    assert 'var x' not in result.raw_text
-    assert 'body { color' not in result.raw_text
-    assert 'Visible' in result.raw_text
+    assert "var x" not in result.raw_text
+    assert "body { color" not in result.raw_text
+    assert "Visible" in result.raw_text
 
 
 @pytest.mark.asyncio
@@ -95,12 +94,12 @@ async def test_html_parser_external_and_inline_images(tmp_path):
       <img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/5TZkVIAAAAASUVORK5CYII=\" />
     </body></html>
     """
-    f = tmp_path / 'img.html'
-    f.write_text(html, encoding='utf-8')
+    f = tmp_path / "img.html"
+    f.write_text(html, encoding="utf-8")
 
     parser = HtmlParser()
     result = await parser.parse(f)
 
     assert result.metadata.image_count == 1
     assert len(result.images) == 1
-    assert all(img.alt_text is None or img.alt_text == '' for img in result.images)
+    assert all(img.alt_text is None or img.alt_text == "" for img in result.images)

@@ -13,12 +13,17 @@ def list_supported_formats_tool():
     """
     logger.info("tool_list_formats_start")
     formats = list_supported_formats()
-    
+
+    try:
+        from src import __version__ as server_version
+    except ImportError:
+        server_version = "unknown"
+
     res = {
-        'formats': [fmt.value for fmt in formats],
-        'count': len(formats),
+        "formats": [fmt.value for fmt in formats],
+        "count": len(formats),
+        "server_version": server_version,
     }
-    
+
     logger.info("tool_list_formats_complete", count=len(formats))
     return res
-

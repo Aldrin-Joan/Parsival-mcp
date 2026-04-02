@@ -7,6 +7,7 @@ logger = get_logger(__name__)
 
 class SecurityError(Exception):
     """Raised when a security boundary is violated."""
+
     pass
 
 
@@ -25,10 +26,7 @@ def _is_within_boundaries(target: Path) -> bool:
     return False
 
 
-def validate_safe_path(
-    requested_path: str | Path,
-    base_dir: Path | None = None
-) -> Path:
+def validate_safe_path(requested_path: str | Path, base_dir: Path | None = None) -> Path:
     """
     Validates that a requested path is safe to access.
 

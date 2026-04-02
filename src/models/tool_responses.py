@@ -3,7 +3,6 @@ from pydantic import BaseModel
 from .enums import OutputFormat, ParseStatus
 from .parse_result import ParseError
 from .metadata import DocumentMetadata
-from .parse_result import Section
 
 
 class ReadFileResult(BaseModel):
