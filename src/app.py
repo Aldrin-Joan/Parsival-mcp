@@ -44,7 +44,11 @@ def get_cache():
 
 async def parse_file(path: str, output_format: OutputFormat = OutputFormat.MARKDOWN, stream: bool = False):
     """Core parsing orchestration logic."""
-    await _startup()
+    try:
+        await _startup()
+    except Exception as exc:
+        logger.warning("startup_initialization_failed", error=str(exc))
+
     fmt = FormatRouter().detect(path)
     parser = get_parser(fmt)
     opts = {"output_format": output_format.value, "stream": stream}

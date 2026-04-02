@@ -17,4 +17,7 @@ try:
             globals()[_name] = getattr(_pymupdf, _name)
 
 except Exception as exc:
-    raise ImportError("Failed to load pymupdf as fitz: %s" % exc)
+    raise ImportError(
+        "Could not import PyMuPDF (pymupdf) as fitz. "
+        "Ensure PyMuPDF is installed and that a non-PyMuPDF fitz package is not taking precedence."
+    ) from exc

@@ -55,12 +55,13 @@ async def _get_or_create_index(path: str) -> Dict[str, Any]:
 
 def _format_search_hits(query_tokens: List[str], sections: List[Any], scores: Any, top_k: int) -> List[SearchHit]:
     """Sorts and formats the top search hits."""
-    top_ids = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+    # Clamp scores to non-negative values and order by score (desc) + section index (asc).
+    scored = [(i, max(0.0, float(scores[i]))) for i in range(len(scores))]
+    scored.sort(key=lambda item: (-item[1], sections[item[0]].index))
 
     hits = []
-    for i in top_ids:
+    for i, score in scored[:top_k]:
         sec = sections[i]
-        score = max(0.0, float(scores[i]))
 
         snippet = sec.content[:200]
         offset = sec.content.lower().find(query_tokens[0])

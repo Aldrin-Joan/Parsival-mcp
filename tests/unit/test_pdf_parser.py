@@ -96,6 +96,43 @@ async def test_pdf_parser_encrypted_file():
 
 
 @pytest.mark.asyncio
+async def test_pdf_parser_file_is_closed_after_parse():
+    path = make_pdf_file("Hello World")
+    try:
+        parser = PDFParser()
+        for _ in range(3):
+            result = await parser.parse(Path(path))
+            assert result.status == ParseStatus.OK
+        os.unlink(path)
+        assert not Path(path).exists()
+    finally:
+        if Path(path).exists():
+            os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_pdf_parser_parser_version_fallback(monkeypatch):
+    path = make_pdf_file("Hello World")
+    original_version = getattr(fitz, "__version__", None)
+    if hasattr(fitz, "__version__"):
+        delattr(fitz, "__version__")
+
+    try:
+        parser = PDFParser()
+        metadata = await parser.parse_metadata(Path(path))
+        assert metadata.parser_version == "n/a"
+
+        result = await parser.parse(Path(path))
+        assert result.status == ParseStatus.OK
+        assert result.metadata.parser_version == "n/a"
+    finally:
+        if original_version is not None:
+            setattr(fitz, "__version__", original_version)
+        if Path(path).exists():
+            os.unlink(path)
+
+
+@pytest.mark.asyncio
 async def test_pdf_parser_image_extraction():
     if Image is None:
         pytest.skip("Pillow required for image creation")

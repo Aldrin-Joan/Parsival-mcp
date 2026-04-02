@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import mmap
 from pathlib import Path
@@ -18,24 +19,34 @@ class ContentHashStore:
         self._lock = Lock()
         self._cache = LRUCache(maxsize=max_bytes, getsizeof=self._sizeof)
 
+        # Async initialization state
+        self._initialized = False
+        self._init_lock = asyncio.Lock()
+
         # Optional Redis backend
         self._redis = None
         self._redis_available = False
 
     async def initialize(self) -> None:
-        """Initialize optional Redis connection after event loop is running."""
-        if not settings.REDIS_ENABLED or redis is None or not settings.REDIS_URL:
+        """Async idempotent initialization (for Redis cache backend)."""
+        if self._initialized:
             return
 
-        try:
-            self._redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
-            await self._redis.ping()
-            self._redis_available = True
-        except Exception as exc:
-            self._redis = None
-            self._redis_available = False
-            # resilience: continue with in-memory only
-            get_logger(__name__).warning("redis_connection_failed", error=str(exc))
+        async with self._init_lock:
+            if self._initialized:
+                return
+
+            if settings.REDIS_ENABLED and redis is not None and settings.REDIS_URL:
+                try:
+                    self._redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+                    await self._redis.ping()
+                    self._redis_available = True
+                except Exception as exc:
+                    self._redis = None
+                    self._redis_available = False
+                    get_logger(__name__).warning("redis_connection_failed", error=str(exc))
+
+            self._initialized = True
 
     def _sizeof(self, value: ParseResult) -> int:
         return len(value.model_dump_json().encode("utf-8"))
