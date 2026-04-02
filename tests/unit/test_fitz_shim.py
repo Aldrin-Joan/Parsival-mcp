@@ -19,6 +19,7 @@ def test_pdf_parser_uses_fitz_shim():
 
     # create a tiny pdf with pymupdf (through fitz)
     import fitz as f
+
     doc = f.open()
     page = doc.new_page()
     page.insert_text((72, 72), "hello")
@@ -38,6 +39,7 @@ def test_pdf_parser_uses_fitz_shim():
     finally:
         try:
             import os
+
             os.unlink(path)
         except Exception:
             pass

@@ -24,6 +24,7 @@ def test_app_parse_path_calls_initialize_without_on_startup(monkeypatch):
 
     # Reload the app module with the fake FastMCP backend.
     import src.app as app
+
     app = importlib.reload(app)
 
     # Verify mcp has no on_startup attr but app starts anyway.

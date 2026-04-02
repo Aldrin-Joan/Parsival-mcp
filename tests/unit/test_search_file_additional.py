@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from src.tools.search_file import _format_search_hits, SearchHit
+from src.tools.search_file import _format_search_hits
 
 
 def test_search_format_hits_keeps_zero_score_hits():
