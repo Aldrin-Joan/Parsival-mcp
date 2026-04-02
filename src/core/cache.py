@@ -57,9 +57,15 @@ class ContentHashStore:
     def _hash_file(self, path: Path) -> str:
         size = path.stat().st_size
         threshold = settings.HYBRID_HASH_THRESHOLD_MB * 1024 * 1024
+
+        if size == 0:
+            # empty file doesn't support mmap
+            return hashlib.sha256(b"").hexdigest()
+
         if size <= threshold:
             h = hashlib.sha256()
             with path.open("rb") as f:
+                # for small files safe to mmap
                 with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
                     h.update(mm)
             return h.hexdigest()

@@ -78,7 +78,12 @@ async def search_file(path: str, query: str, top_k: int = 5) -> List[SearchHit]:
     if not query.strip():
         raise ValueError("Empty query")
 
-    index_data = await _get_or_create_index(path)
+    try:
+        index_data = await _get_or_create_index(path)
+    except Exception as exc:
+        logger.warning("tool_search_file_index_failed", path=str(path), error=str(exc))
+        return []
+
     bm25, sections = index_data["bm25"], index_data["sections"]
 
     if not bm25 or not sections:

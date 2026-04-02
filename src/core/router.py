@@ -23,6 +23,7 @@ EXTENSION_TO_FORMAT = {
     ".csv": FileFormat.CSV,
     ".html": FileFormat.HTML,
     ".htm": FileFormat.HTML,
+    ".xml": FileFormat.HTML,
     ".txt": FileFormat.TEXT,
     ".md": FileFormat.MARKDOWN,
 }

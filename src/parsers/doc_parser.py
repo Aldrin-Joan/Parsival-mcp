@@ -245,14 +245,45 @@ class DocParser(BaseParser):
         converted_docx = None
         temp_dir = None
 
-        async with libreoffice_semaphore:
-            converted_docx, temp_dir = await self._convert_doc_to_docx(source_path)
-
         try:
-            delegate = DocxParser()
-            metadata = await delegate.parse_metadata(converted_docx)
-        finally:
-            await self._cleanup_temp_dir(temp_dir)
+            async with libreoffice_semaphore:
+                converted_docx, temp_dir = await self._convert_doc_to_docx(source_path)
+
+            try:
+                delegate = DocxParser()
+                metadata = await delegate.parse_metadata(converted_docx)
+            finally:
+                await self._cleanup_temp_dir(temp_dir)
+
+            metadata.source_path = str(source_path)
+            metadata.file_format = FileFormat.DOC
+            return metadata
+        except FileNotFoundError as exc:
+            # LibreOffice not installed / converter missing: return lightweight metadata without parse
+            return DocumentMetadata(
+                source_path=str(source_path),
+                file_format=FileFormat.DOC,
+                file_size_bytes=source_path.stat().st_size,
+                section_count=0,
+                table_count=0,
+                image_count=0,
+                has_toc=False,
+                toc=[],
+                parse_duration_ms=0.0,
+            )
+        except Exception as exc:
+            # Fallback metadata on any converter failure
+            return DocumentMetadata(
+                source_path=str(source_path),
+                file_format=FileFormat.DOC,
+                file_size_bytes=source_path.stat().st_size,
+                section_count=0,
+                table_count=0,
+                image_count=0,
+                has_toc=False,
+                toc=[],
+                parse_duration_ms=0.0,
+            )
 
         metadata.source_path = str(source_path)
         metadata.file_format = FileFormat.DOC

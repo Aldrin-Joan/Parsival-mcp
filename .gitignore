@@ -25,15 +25,20 @@ benchmark_mcp.py
 prepare_data.py
 .DS_Store
 Thumbs.db
-
+sample_documents
 # Logs
 *.log
-
+torture_test_documents
 # Build artifacts
 dist/
 build/
 *.egg-info/
-
+benchmark_mcp_real_data.py
+benchmark_mcp_torture_data.py
+generate_mcp_samples.py
+generate_torture_test_dataset.py
 # Misc
 .mypy_cache/
 .cache/
+scripts
+generate_torture_test_dataset.py

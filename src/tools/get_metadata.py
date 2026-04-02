@@ -53,3 +53,17 @@ async def get_metadata(path: str) -> DocumentMetadata:
         )
         logger.info("tool_get_metadata_unsupported", path=str(safe_path))
         return metadata
+    except Exception as exc:
+        logger.warning("tool_get_metadata_failed", path=str(safe_path), error=str(exc))
+        return DocumentMetadata(
+            source_path=str(safe_path),
+            file_format=FileFormat.UNKNOWN,
+            file_size_bytes=safe_path.stat().st_size if safe_path.exists() else 0,
+            section_count=0,
+            table_count=0,
+            image_count=0,
+            has_toc=False,
+            toc=[],
+            parse_duration_ms=0.0,
+            parser_version="get_metadata_exception",
+        )

@@ -14,6 +14,23 @@ from src.parsers.registry import register
 from src.parsers.utils import FileOversizeError, enforce_file_size, normalize_text, is_docx_encrypted
 
 
+def _extract_docx_fallback_text(src: Path) -> str:
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    try:
+        with zipfile.ZipFile(src, "r") as z:
+            if "word/document.xml" not in z.namelist():
+                return ""
+            xml_blob = z.read("word/document.xml")
+        tree = ET.fromstring(xml_blob)
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        text_parts = [t.text or "" for t in tree.findall(".//w:t", ns)]
+        return " ".join(text_parts).strip()
+    except Exception:
+        return ""
+
+
 @register(FileFormat.DOCX)
 class DocxParser(BaseParser):
     async def parse(self, path: Path, options: dict | None = None) -> ParseResult:
@@ -75,6 +92,38 @@ class DocxParser(BaseParser):
             msg = str(exc)
             if "encrypted" in msg.lower() or "password" in msg.lower():
                 code = "encrypted"
+
+            fallback_text = _extract_docx_fallback_text(src)
+            if fallback_text:
+                fallback_section = Section(index=0, type=SectionType.PARAGRAPH, content=normalize_text(fallback_text))
+                metadata = DocumentMetadata(
+                    source_path=str(src),
+                    file_format=FileFormat.DOCX,
+                    file_size_bytes=src.stat().st_size if src.exists() else 0,
+                    page_count=None,
+                    word_count=len(fallback_text.split()),
+                    char_count=len(fallback_text),
+                    reading_time_minutes=None,
+                    section_count=1,
+                    table_count=0,
+                    image_count=0,
+                    has_toc=False,
+                    toc=[],
+                    parse_duration_ms=(__import__("time").time() - start) * 1000,
+                    parser_version=docx.__version__,
+                )
+                return ParseResult(
+                    status=ParseStatus.PARTIAL,
+                    metadata=metadata,
+                    sections=[fallback_section],
+                    images=[],
+                    tables=[],
+                    errors=[ParseError(code=code, message=msg, recoverable=True)],
+                    raw_text=normalize_text(fallback_text),
+                    cache_hit=False,
+                    request_id="",
+                )
+
             metadata = DocumentMetadata(
                 source_path=str(src),
                 file_format=FileFormat.DOCX,
@@ -91,7 +140,7 @@ class DocxParser(BaseParser):
                 images=[],
                 tables=[],
                 errors=[ParseError(code=code, message=msg, recoverable=False)],
-                raw_text=None,
+                raw_text="",
                 cache_hit=False,
                 request_id="",
             )
@@ -244,26 +293,47 @@ class DocxParser(BaseParser):
 
     async def parse_metadata(self, path: Path) -> DocumentMetadata:
         src = Path(path)
-        doc = docx.Document(str(src))
-        props = doc.core_properties
-
-        return DocumentMetadata(
-            source_path=str(src),
-            file_format=FileFormat.DOCX,
-            file_size_bytes=src.stat().st_size,
-            title=props.title,
-            author=props.author,
-            subject=props.subject,
-            keywords=props.keywords.split(",") if props.keywords else [],
-            created_at=props.created.isoformat() if props.created else None,
-            modified_at=props.modified.isoformat() if props.modified else None,
-            producer=None,
-            page_count=None,
-            section_count=0,
-            table_count=0,
-            image_count=0,
-            has_toc=False,
-            toc=[],
-            parse_duration_ms=0.0,
-            parser_version=docx.__version__,
-        )
+        try:
+            doc = docx.Document(str(src))
+            props = doc.core_properties
+            return DocumentMetadata(
+                source_path=str(src),
+                file_format=FileFormat.DOCX,
+                file_size_bytes=src.stat().st_size,
+                title=props.title,
+                author=props.author,
+                subject=props.subject,
+                keywords=props.keywords.split(",") if props.keywords else [],
+                created_at=props.created.isoformat() if props.created else None,
+                modified_at=props.modified.isoformat() if props.modified else None,
+                producer=None,
+                page_count=None,
+                section_count=0,
+                table_count=0,
+                image_count=0,
+                has_toc=False,
+                toc=[],
+                parse_duration_ms=0.0,
+                parser_version=docx.__version__,
+            )
+        except Exception:
+            return DocumentMetadata(
+                source_path=str(src),
+                file_format=FileFormat.DOCX,
+                file_size_bytes=src.stat().st_size if src.exists() else 0,
+                title=None,
+                author=None,
+                subject=None,
+                keywords=[],
+                created_at=None,
+                modified_at=None,
+                producer=None,
+                page_count=None,
+                section_count=0,
+                table_count=0,
+                image_count=0,
+                has_toc=False,
+                toc=[],
+                parse_duration_ms=0.0,
+                parser_version="docx_parser_corrupt",
+            )
