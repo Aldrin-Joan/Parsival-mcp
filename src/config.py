@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     TRANSPORT: str = "stdio"
 
     @field_validator("TRANSPORT", mode="before")
-    def _normalize_transport(cls, v):
+    def _normalize_transport(cls, v):  # noqa: N805
         if not isinstance(v, str):
             raise ValueError("TRANSPORT must be a string")
 
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
         return normalized
 
     @field_validator("ALLOWED_DIRECTORIES", mode="before")
-    def _normalize_allowed_directories(cls, v):
+    def _normalize_allowed_directories(cls, v):  # noqa: N805
         if isinstance(v, str):
             text = v.strip()
             if not text:
