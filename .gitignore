@@ -9,6 +9,9 @@ __pycache__/
 # Environment
 .venv/
 env/
+data
+results
+reports
 venv/
 *.env
 htmlcov
@@ -17,8 +20,9 @@ htmlcov
 .idea/
 *.sublime-project
 *.sublime-workspace
-
+benchmark_mcp.py
 # OS
+prepare_data.py
 .DS_Store
 Thumbs.db
 
