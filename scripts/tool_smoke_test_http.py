@@ -3,6 +3,11 @@ import os
 import tempfile
 from pathlib import Path
 
+"""Legacy rollback smoke test for HTTP/SSE transport.
+
+Primary migration validation should use scripts/tool_smoke_test_stdio.py.
+"""
+
 from mcp import ClientSessionGroup
 from mcp.client.session_group import SseServerParameters
 

@@ -35,6 +35,17 @@ class Settings(BaseSettings):
 
     ALLOWED_DIRECTORIES: str | list[str] = _DEFAULT_ALLOWED_DIRECTORIES
     WORKSPACE_ROOT: str = "."
+    TRANSPORT: str = "fastmcp"
+
+    @field_validator("TRANSPORT", mode="before")
+    def _normalize_transport(cls, v):
+        if not isinstance(v, str):
+            raise ValueError("TRANSPORT must be a string")
+
+        normalized = v.strip().lower()
+        if normalized not in {"fastmcp", "stdio"}:
+            raise ValueError("TRANSPORT must be one of: fastmcp, stdio")
+        return normalized
 
     @field_validator("ALLOWED_DIRECTORIES", mode="before")
     def _normalize_allowed_directories(cls, v):
@@ -67,6 +78,10 @@ class Settings(BaseSettings):
             return [_normalize_dir(str(x)) for x in v if x is not None]
 
         raise ValueError("ALLOWED_DIRECTORIES must be a list[str] or parseable string")
+
+    @property
+    def is_stdio_transport(self) -> bool:
+        return self.TRANSPORT == "stdio"
 
 
 settings = Settings()

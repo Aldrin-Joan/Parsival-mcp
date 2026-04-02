@@ -4,13 +4,35 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      REDIS_ENABLED: "false"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: "/app"
+      MCP_TRANSPORT: "stdio"
+      MCP_WORKSPACE_ROOT: "/app"
+      MCP_ALLOWED_DIRECTORIES: "[\"/app\",\"/tmp\"]"
+    volumes:
+      - .:/app:rw
+    stdin_open: true
+    tty: false
+    command: ["python", "-m", "src.mcp_entrypoint"]
+
+  parsival-legacy-sse:
+    profiles: ["legacy-sse"]
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
       REDIS_ENABLED: "false"
       PYTHONUNBUFFERED: "1"
       PYTHONPATH: "/app"
+      MCP_TRANSPORT: "fastmcp"
+      MCP_WORKSPACE_ROOT: "/app"
+      MCP_ALLOWED_DIRECTORIES: "[\"/app\",\"/tmp\"]"
       FASTMCP_SERVER_HOST: "0.0.0.0"
       FASTMCP_SERVER_PORT: "8000"
     volumes:
       - .:/app:rw
+    command: ["python", "-m", "src.mcp_entrypoint"]

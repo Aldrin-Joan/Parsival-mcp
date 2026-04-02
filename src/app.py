@@ -1,6 +1,5 @@
 from typing import Any, Optional, Tuple, List
 from fastmcp import FastMCP
-from pathlib import Path
 
 from src.core.logging import get_logger
 from src.post_processors.pipeline import PostProcessingPipeline
@@ -11,12 +10,12 @@ from src.parsers.registry import get_parser
 from src.core.router import FormatRouter, UnsupportedFormatError
 from src.core.cache import ContentHashStore
 from src.core.executor import run_parse_in_pool
-from src.models.enums import FileFormat, OutputFormat, ParseStatus
+from src.models.enums import OutputFormat
 from src.models.tool_responses import SearchHit
 from src.models.metadata import DocumentMetadata
-from src.models.parse_result import ParseResult, ParseError
 from src.models.table import TableResult
 from src.models.image import ImageRef
+from src.mcp_runtime import initialize_cache, parse_file_core, serialize_result_core
 
 # Singleton instances
 logger = get_logger("parsival")
@@ -26,7 +25,7 @@ mcp = FastMCP("Parsival", version="0.1.0")
 
 async def _startup():
     """Application startup initialization."""
-    await cache_store.initialize()
+    await initialize_cache(cache_store)
 
 
 if hasattr(mcp, "on_startup"):
@@ -52,117 +51,34 @@ async def parse_file(
     stream: bool = False,
 ):
     """Core parsing orchestration logic."""
-    try:
-        await _startup()
-    except Exception as exc:
-        logger.warning("startup_initialization_failed", error=str(exc))
-
-    file_path = Path(path)
-    pre_stat = file_path.stat()
-
-    try:
-        fmt = FormatRouter().detect(path)
-    except UnsupportedFormatError as exc:
-        metadata = DocumentMetadata(
-            source_path=str(path),
-            file_format=FileFormat.UNKNOWN,
-            file_size_bytes=pre_stat.st_size,
-            section_count=0,
-            table_count=0,
-            image_count=0,
-            has_toc=False,
-            toc=[],
-            parse_duration_ms=0.0,
-            parser_version="",
-        )
-        return ParseResult(
-            status=ParseStatus.UNSUPPORTED,
-            metadata=metadata,
-            sections=[],
-            images=[],
-            tables=[],
-            errors=[ParseError(code="unsupported_format", message=str(exc), recoverable=False)],
-            raw_text="",
-            cache_hit=False,
-            request_id="",
-        )
-
-    parser = get_parser(fmt)
-    opts = {
-        "output_format": output_format.value,
-        "stream": stream,
-        "page_range": page_range,
-        "include_images": include_images,
-        "max_tokens_hint": max_tokens_hint,
-    }
-    key = cache_store.make_cache_key(path, opts)
-
-    if not stream:
-        hit = await cache_store.get(key)
-        if hit:
-            hit.metadata.parse_duration_ms = 0.0
-            hit.cache_hit = True
-            return hit
-
-    if stream:
-        return parser.stream_chunks(file_path, options=opts)
-
-    res = await run_parse_in_pool(path, options=opts)
-    res = PostProcessingPipeline.run(res)
-
-    # Apply token hint post hoc (soft limit)
-    if max_tokens_hint is not None and max_tokens_hint > 0 and res.raw_text:
-        tokens = res.raw_text.split()
-        if len(tokens) > max_tokens_hint:
-            res.raw_text = " ".join(tokens[:max_tokens_hint])
-            # trim section list to match text budget
-            token_count = 0
-            kept_sections = []
-
-            for sec in res.sections:
-                sec_tokens = sec.content.split()
-                if token_count + len(sec_tokens) <= max_tokens_hint:
-                    kept_sections.append(sec)
-                    token_count += len(sec_tokens)
-                else:
-                    break
-            res.sections = kept_sections
-            res.status = ParseStatus.PARTIAL
-            res.errors.append(
-                ParseError(
-                    code="max_tokens_hint_reached",
-                    message=f"Truncated output to {max_tokens_hint} tokens",
-                    recoverable=True,
-                )
-            )
-
-    post_stat = file_path.stat()
-    if post_stat.st_mtime != pre_stat.st_mtime or post_stat.st_size != pre_stat.st_size:
-        res.errors.append(
-            ParseError(
-                code="file_modified_during_parse",
-                message="File mtime changed during parsing; result may be inconsistent",
-                recoverable=True,
-            )
-        )
-        res.status = ParseStatus.PARTIAL
-        await cache_store.invalidate(key)
-        return res
-
-    if not stream:
-        await cache_store.set(key, res)
-    return res
+    # Keep dependency bindings local so tests can monkeypatch app-level collaborators.
+    return await parse_file_core(
+        path,
+        output_format=output_format,
+        page_range=page_range,
+        include_images=include_images,
+        max_tokens_hint=max_tokens_hint,
+        stream=stream,
+        startup_cb=_startup,
+        logger=logger,
+        format_router_factory=FormatRouter,
+        unsupported_format_error=UnsupportedFormatError,
+        get_parser_fn=get_parser,
+        cache_store=cache_store,
+        run_parse_in_pool_fn=run_parse_in_pool,
+        postprocess_run_fn=PostProcessingPipeline.run,
+    )
 
 
 def serialize_result(result, output_format: OutputFormat) -> str:
     """Serializes ParseResult to the requested string format."""
-    if output_format == OutputFormat.MARKDOWN:
-        return MarkdownSerializer.serialize(result)
-    if output_format == OutputFormat.JSON:
-        return JSONSerializer.serialize(result)
-    if output_format == OutputFormat.TEXT:
-        return TextSerializer.serialize(result)
-    return result.raw_text or ""
+    return serialize_result_core(
+        result,
+        output_format,
+        markdown_serializer=MarkdownSerializer,
+        json_serializer=JSONSerializer,
+        text_serializer=TextSerializer,
+    )
 
 
 # --- MCP Tool Registrations ---

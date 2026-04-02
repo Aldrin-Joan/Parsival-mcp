@@ -45,7 +45,7 @@ ENV LIBREOFFICE_BINARY=soffice
 ENV LIBREOFFICE_TIMEOUT_SEC=30
 ENV LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC=5
 ENV LIBREOFFICE_MAX_CONCURRENT=2
+ENV PYTHONPATH=/app
+ENV MCP_TRANSPORT=stdio
 
-EXPOSE 8000
-
-CMD ["fastmcp", "run", "src/app.py:mcp", "--transport", "sse"]
+CMD ["python", "-m", "src.mcp_entrypoint"]
