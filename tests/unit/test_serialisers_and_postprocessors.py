@@ -63,10 +63,10 @@ def test_markdown_serializer_front_matter_strict_keys():
     )
     out = MarkdownSerializer.serialize(result)
     assert out.startswith("---\n")
-    assert "title: \"Document Title\"" in out
-    assert "author: \"Author Name\"" in out
-    assert "source: \"/tmp/f\"" in out
-    assert "format: \"pdf\"" in out
+    assert 'title: "Document Title"' in out
+    assert 'author: "Author Name"' in out
+    assert 'source: "/tmp/f"' in out
+    assert 'format: "pdf"' in out
     assert "pages: 2" in out
     assert "generated_at:" in out
     assert "source_path" not in out

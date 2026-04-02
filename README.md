@@ -1,142 +1,412 @@
 # Parsival
 
-Parsival is a FastMCP-based file parsing service that supports parsing of text, PDF, DOCX, DOC, HTML, CSV, XLSX, PPTX and streaming extraction. It provides safety protections for corrupt and encrypted files, file-size limits, Redis caching, subprocess hardening, and process pool-constrained parallelism.
+Parsival is a production-friendly, tool-based file parsing microservice built on FastMCP. It is designed to convert common document formats into rich structured outputs (Markdown, JSON, text), with performance tuning and safety hardening for stream processing and agent integrations.
 
-## Contents
-- [Setup](#setup)
-- [Usage](#usage)
-- [Streaming usage](#streaming-usage)
-- [Architecture summary](#architecture-summary)
-- [Troubleshooting](#troubleshooting)
+- Supported input formats: PDF, DOCX, DOC, PPTX, XLSX, CSV, HTML, MD, TXT
+- Streaming parse support for large documents
+- Cache layer: in-memory LRU + optional Redis
+- Robust handling of corrupt/encrypted documents, size limits, subprocess isolation
+- Plugin-style parser registry and post-processing pipeline
 
-## Setup
+---
 
-### Local install
+## Table of Contents
 
-1. Clone repo:
-   ```bash
-   git clone https://github.com/Aldrin-Joan/Parsival-mcp.git
-   cd Parsival-mcp
-   ```
+1. [Quickstart](#quickstart)
+2. [Features](#features)
+3. [Architecture](#architecture)
+4. [Repository layout](#repository-layout)
+5. [Configuration](#configuration)
+6. [Local development](#local-development)
+7. [Running in Docker](#running-in-docker)
+8. [API and tools](#api-and-tools)
+9. [Parser details](#parser-details)
+10. [Cache behavior](#cache-behavior)
+11. [Testing and CI](#testing-and-ci)
+12. [Troubleshooting](#troubleshooting)
 
-2. Create python env:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate    # macOS/Linux
-   .venv\Scripts\activate     # Windows
-   ```
+---
 
-3. Install dependencies:
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+## Quickstart
 
-4. Config (optional): in environment:
-   ```bash
-   export MCP_REDIS_ENABLED=1
-   export MCP_REDIS_URL=redis://localhost:6379/0
-   ```
+### Clone repository
 
-### Docker (recommended)
+```bash
+git clone https://github.com/Aldrin-Joan/Parsival-mcp.git
+cd Parsival-mcp
+```
 
-1. Build image:
-   ```bash
-   docker build -t parsival:phase5 .
-   ```
+### Python virtual environment
 
-2. Run container:
-   ```bash
-   docker run --rm -p 8000:8000 parsival:phase5
-   ```
+Linux/macOS:
 
-3. Or compose:
-   ```bash
-   docker compose up --build
-   ```
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-## Usage
+Windows (PowerShell):
 
-### FastMCP host
-Run server (via Docker CMD or local):
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+### Run server
+
 ```bash
 python -m fastmcp --host 0.0.0.0 --port 8000 parsival
 ```
 
-### API actions (pseudo-CLI / endpoint)
-- Parse file (non-stream):
-  - path -> format auto-detect -> parse with parser
-  - `ParseResult` object returns sections/images/tables metadata
-- Tools are registered in `src/tools` for file lookup, conversion, metadata.
+or using builtin module directly:
 
-### Example: parse a local file using direct app function
-```python
-from src.app import parse_file
-from src.models.enums import OutputFormat
-
-result = await parse_file('example.pdf', output_format=OutputFormat.JSON, stream=False)
-print(result.status, result.metadata)
+```bash
+python -m fastmcp --host 0.0.0.0 --port 8000 --transport sse src/app.py:mcp
 ```
 
-### Caching
-- Redis optional by `MCP_REDIS_ENABLED=true` and `MCP_REDIS_URL`.
-- If Redis unavailable, fallback to local LRU in-memory cache.
-- TTL controlled by `MCP_REDIS_TTL` (seconds).
+### Verify supported formats
 
-## Streaming usage
+```python
+from src.app import list_supported_formats
+print(list_supported_formats())
+```
 
-- Parser stream option in `app.parse_file(path, stream=True)` uses `stream_chunks`.
-- In streaming mode, `cache` is skipped and early stream-first outcomes are delivered.
-- `PDFParser.stream_sections` emits per-section chunks, with flow control (page delay param for testing).
+---
 
-## Architecture summary
+## Features
 
-- `src/app.py` is entry point, uses:
-  - `FormatRouter` (detects MIME/extension)
-  - `registry` (parser lookup)
-  - `ContentHashStore` (cache layer with Redis fallback)
-  - `PostProcessingPipeline` (metadata normalisation and post-processing)
-  - `core.executor.run_parse_in_pool` for CPU-constrained parallel jobs
+- Multi-format file parsing with dedicated parser plugins
+- Output in Markdown, JSON, or raw text
+- Streaming parser mode (`stream=True`) for early chunks
+- Redis-backed caching with local LRU fallback
+- Configurable file-size caps and parser timeouts
+- LibreOffice conversion path for `.doc` support
+- In-process and worker process isolation via `ProcessPoolExecutor`
+- Rich `ParseResult` model with metadata, errors, and recoverability flags
+- Pluggable post-processing pipeline: metadata enrichment, table normalization, image extraction
 
-- Parsers (in `src/parsers`) each implement:
-  - `parse(path, options)`
-  - `parse_metadata(path)`
-  - `stream_sections` (optional)
+---
 
-- Robustness enhancements:
-  - Corrupt/encrypted detection
-  - UTF-8 normalization
-  - file-size enforcement (`MAX_FILE_SIZE_MB`, `MAX_STREAM_FILE_SIZE_MB`)
-  - subprocess safety for LibreOffice conversions
-  - process pool / thread tuning
+## Architecture
 
-- Benchmarking bundle in `tests/benchmarks`.
-- CI pipeline in `.github/workflows/ci.yml` runs tests, coverage (>=90%), lint.
+### Logical layers
 
-## Troubleshooting
+- `src/app.py` - FastMCP app & tool definitions
+- `src/core` - configuration, caching, routing, executor, security
+- `src/parsers` - format-specific parsing logic
+- `src/post_processors` - result enrichment pipeline
+- `src/serialisers` - output marshal (Markdown, JSON, text)
+- `src/tools` - public tool API bound to FastMCP
 
-### Common issues
-- `module 'src.parsers' not found`
-  - set PYTHONPATH: `export PYTHONPATH=$(pwd)/src` (or Windows `set PYTHONPATH=%CD%\src`).
+### Core flow
 
-- `project.dependencies must be array` on pip install
-  - Use `requirements.txt` route (or fix `pyproject.toml` to valid array). This repo currently works by explicit package list due pyproject validation issue.
+1. Client calls MCP tool (e.g., `read_file`).
+2. `src/tools/read_file.py` validates path via `validate_safe_path()`.
+3. `src.app.parse_file()` uses `FormatRouter` to infer `FileFormat`.
+4. parser fetched from `src.parsers.registry`.
+5. `core.executor.run_parse_in_pool()` executes parser in process pool.
+6. `PostProcessingPipeline` normalizes output.
+7. Cache key is generated in `ContentHashStore` from file hash + options.
+8. Serialized response returned.
 
-- `LibreOffice conversion timed out`:
-  - Increase `MCP_LIBREOFFICE_TIMEOUT_SEC` or `LIBREOFFICE_TIMEOUT_SEC`.
-  - Check `libreoffice` is installed in environment.
+### Format detection (router)
 
-- `max size exceeded`:
-  - Config `MCP_MAX_FILE_SIZE_MB` / `MCP_MAX_STREAM_FILE_SIZE_MB` in environment.
+- `magic` MIME sniff (if available)
+- extension map (e.g., `.pdf`, `.docx`, `.pptx`)
+- content heuristics for CSV/HTML/Markdown
 
-### Debug logging
-- Check `src/core/logging.py` for structured logs.
+### Supported tools
 
-### Running tests
+- `read_file`
+- `get_metadata`
+- `extract_table`
+- `extract_images`
+- `convert_to_markdown`
+- `search_file`
+- `list_supported_formats`
+
+---
+
+## Repository layout
+
+```
+.
+├── Dockerfile
+├── docker-compose.yml
+├── pyproject.toml
+├── requirements.txt
+├── src/
+│   ├── app.py
+│   ├── config.py
+│   ├── core/
+│   ├── parsers/
+│   ├── post_processors/
+│   ├── serialisers/
+│   ├── tools/
+│   └── models/
+└── tests/
+    ├── unit/
+    └── benchmarks/
+```
+
+- `src/config.py` - environment-driven settings object
+- `src/core/cache.py` - in-memory + Redis caching layer
+- `src/core/router.py` - file format determination
+- `src/core/executor.py` - process pool execution with thread limits
+- `src/parsers/*` - per-format parsing logic
+- `src/post_processors/*` - enrich parse results
+- `src/serialisers/*` - Markdown/JSON/text serializer
+- `src/tools/*` - tool wrappers for MCP requests
+
+---
+
+## Configuration
+
+### Required packages
+
+- python >= 3.11
+- packages listed in `requirements.txt`
+
+### Optional services
+
+- Redis (for shared cache)
+- LibreOffice (for `.doc` conversion; installed in Dockerfile)
+
+### Environment variables (`MCP_` prefix)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCP_APP_NAME` | `Parsival` | Application name (unused in code currently) |
+| `MCP_PROCESS_POOL_SIZE` | `4` | Max worker processes for parsing |
+| `MCP_MAX_FILE_SIZE_MB` | `500` | Max file bytes for non-stream parse |
+| `MCP_MAX_STREAM_FILE_SIZE_MB` | `2048` | Max file bytes for stream parse |
+| `MCP_HYBRID_HASH_THRESHOLD_MB` | `50` | Threshold for full vs partial hash in cache key |
+| `MCP_REDIS_ENABLED` | `false` | Enables Redis cache backend |
+| `MCP_REDIS_URL` | `None` | URL to Redis server |
+| `MCP_REDIS_TTL` | `3600` | Redis key TTL (seconds) |
+| `MCP_SENTRY_ENABLED` | `false` | Enable Sentry (not bundled in code path)
+| `MCP_SENTRY_DSN` | `None` | Sentry DSN
+| `MCP_LIBREOFFICE_PATH` | `None` | Override LibreOffice path
+| `MCP_MAX_LIBREOFFICE_WORKERS` | `2` | Max concurrent LibreOffice conversions
+| `MCP_SUBPROCESS_TIMEOUT_SEC` | `30` | Subprocess timeout in doc parser
+| `MCP_ALLOWED_DIRECTORIES` | `[., /tmp]` | directories permitted for file read paths
+| `MCP_WORKSPACE_ROOT` | `.` | root directory boundary for security
+
+### Non-prefixed env vars from parser
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LIBREOFFICE_BINARY` | `soffice` | LibreOffice CLI binary |
+| `LIBREOFFICE_TIMEOUT_SEC` | `30` | conversion process timeout |
+| `LIBREOFFICE_SECONDARY_KILL_TIMEOUT_SEC` | `5` | wait before kill signal buffer |
+| `LIBREOFFICE_MAX_CONCURRENT` | `2` | concurrent conversions |
+
+---
+
+## Local development
+
+### Install
+
+```bash
+pip install -r requirements.txt
+```
+
+### Run unit tests
+
 ```bash
 pytest -q
+```
+
+### Run benchmarks
+
+```bash
 pytest -q tests/benchmarks/test_benchmarks.py
 ```
 
-## Contact
-If you have questions or feature requests, open an issue or PR with details.
+### Static checks
+
+```bash
+ruff check .
+python -m mypy src tests
+```
+
+### Add pre-commit
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+---
+
+## Running in Docker
+
+### Build
+
+```bash
+docker build -t parsival:latest .
+```
+
+### Run
+
+```bash
+docker run --rm -p 8000:8000 -e PYTHONUNBUFFERED=1 parsival:latest
+```
+
+### Compose (single host)
+
+```bash
+docker compose up --build
+```
+
+Container includes LibreOffice and `python-magic` dependencies required for DOC/DOCX and format sniffing.
+
+---
+
+## API and tools
+
+Parsival exposes FastMCP tools. Use your preferred MCP client to call tools by name.
+
+### `read_file`
+- `path`: str
+- `output_format`: "markdown" | "json" | "text" (default "markdown")
+- `page_range`: [start, end] (1-indexed)
+- `include_images`: bool (default true)
+- `max_tokens_hint`: int
+- `stream`: bool (default false)
+
+Returns `ReadFileResult` (status, format, content, metadata, errors, cache_hit, request_id).
+
+### `get_metadata`
+- `path`: str
+- Returns `DocumentMetadata` object (file_format, page_count, table_count, etc.)
+
+### `extract_table`
+- `path`: str
+- `table_index`: int
+- `sheet_name`: Optional[str]
+- Returns `TableResult`
+
+### `extract_images`
+- `path`: str
+- `page_range`: Optional[tuple[int,int]]
+- `max_dimension`: Optional[int]
+- Returns list[`ImageRef`]
+
+### `convert_to_markdown`
+- `path`: str
+- Returns markdown string
+
+### `search_file`
+- `path`: str
+- `query`: str
+- `top_k`: int
+- Uses BM25 ranking on section text (via `rank-bm25`)
+
+### `list_supported_formats`
+- no params
+- returns available `FileFormat` values and server version
+
+---
+
+## Parser details
+
+### Supported file formats
+
+- PDF: `src/parsers/pdf_parser.py` (PyMuPDF + optional pdfplumber tables)
+- DOCX: `src/parsers/docx_parser.py` (python-docx)
+- DOC: `src/parsers/doc_parser.py` (LibreOffice conversion + DOCX parser)
+- XLSX: `src/parsers/xlsx_parser.py` (openpyxl, polars)
+- CSV: `src/parsers/csv_parser.py` (polars, utf-8 fallbacks)
+- PPTX: `src/parsers/pptx_parser.py` (python-pptx)
+- HTML: `src/parsers/html_parser.py` (BeautifulSoup + markdownify)
+- TXT/MD: `src/parsers/text_parser.py` (plain text heuristics)
+
+### Parse workflow
+
+- `parse_file` determines format with `FormatRouter.detect`.
+- Parser returns `ParseResult`, including `sections`, `tables`, `images`, `metadata`, `errors`.
+- `stream=True` dispatches parser `stream_chunks`, bypassing cache prefetch.
+- `max_tokens_hint` is a soft truncation applied post-parse.
+
+### Error handling
+
+- Corrupt/encrypted docs return `ParseStatus.FAILED` with `ParseError` code (e.g. `encrypted`, `corrupt`).
+- Oversized files return `ParseStatus.OVERSIZE` (source path/size in metadata).
+- The parse flow protects against changed file state between read and result flushing.
+
+---
+
+## Cache behavior
+
+- Cache key built in `src/core/cache.py` as `SHA256(file) + ':' + SHA256(opts)`.
+- Options considered: output_format, page_range, include_images, max_tokens_hint, max_dimension.
+- In-memory LRU cache `cachetools.LRUCache` with size sample based on JSON size of ParseResult.
+- Redis backend if `MCP_REDIS_ENABLED=true` and `MCP_REDIS_URL` is set.
+- Redis fallback automatically to in-memory on connection failure.
+- Use `MCP_REDIS_TTL` (default 3600s).
+
+---
+
+## Testing and CI
+
+### Local test run
+
+```bash
+pytest -q
+```
+
+### Coverage
+
+```bash
+coverage run -m pytest -q
+coverage report -m --fail-under=90
+```
+
+### CI pipeline is in
+
+- `.github/workflows/ci.yml`
+  - tests against Python 3.11/3.12/3.13
+  - `ruff check .`
+  - coverage + codecov
+
+---
+
+## Troubleshooting
+
+### Path sanitation
+
+`src/core/security.py` enforces `MCP_WORKSPACE_ROOT` and `MCP_ALLOWED_DIRECTORIES`. If you get `SecurityError`:
+
+- set `MCP_WORKSPACE_ROOT` to your repo root
+- add permitted directories via `MCP_ALLOWED_DIRECTORIES`
+
+### Unsupported formats
+
+If parsing fails with unsupported format, check extension + file magic and use standard formats only.
+
+### LibreOffice failures
+
+- Ensure `soffice` is installed in PATH (Dockerfile includes `libreoffice-*` packages)
+- Increase:
+  - `export LIBREOFFICE_TIMEOUT_SEC=60`
+  - `export MCP_MAX_LIBREOFFICE_WORKERS=4`
+
+### Redis caching
+
+- If no Redis configured, the service works with in-memory cache.
+- Set `MCP_REDIS_ENABLED=true` and `MCP_REDIS_URL=redis://localhost:6379/0`.
+
+---
+
+## Maintainer notes
+
+- This README is generated from code and supported configs in `src/` and `Docs/`.
+- For extensions, add parser class in `src/parsers` and register with `@register(FileFormat.X)`.
+- To expose a new MCP tool, define in `src/tools` and add a decorated function in `src/app.py`.
+

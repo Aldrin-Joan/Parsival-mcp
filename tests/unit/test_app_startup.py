@@ -84,7 +84,6 @@ def test_app_parse_path_calls_initialize_without_on_startup(monkeypatch):
 
     app.cache_store.initialize = fake_initialize
 
-    import tempfile
 
     temp = tempfile.NamedTemporaryFile(delete=False)
     temp.write(b"dummy")
@@ -101,7 +100,7 @@ def test_app_parse_path_calls_initialize_without_on_startup(monkeypatch):
 
 def test_parse_file_detects_modification_during_parse(tmp_path, monkeypatch):
     import src.app as app
-    from src.models.parse_result import ParseResult, ParseError
+    from src.models.parse_result import ParseResult
     from src.models.metadata import DocumentMetadata
     from src.models.enums import ParseStatus
 

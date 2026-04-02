@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, List
+from typing import Any, Optional, Tuple, List
 from fastmcp import FastMCP
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from src.core.router import FormatRouter, UnsupportedFormatError
 from src.core.cache import ContentHashStore
 from src.core.executor import run_parse_in_pool
 from src.models.enums import FileFormat, OutputFormat, ParseStatus
-from src.models.tool_responses import ReadFileResult, SearchHit
+from src.models.tool_responses import SearchHit
 from src.models.metadata import DocumentMetadata
 from src.models.parse_result import ParseResult, ParseError
 from src.models.table import TableResult
@@ -118,7 +118,6 @@ async def parse_file(
             # trim section list to match text budget
             token_count = 0
             kept_sections = []
-            from src.models.parse_result import Section
 
             for sec in res.sections:
                 sec_tokens = sec.content.split()
@@ -177,7 +176,7 @@ async def read_file(
     include_images: bool = True,
     max_tokens_hint: int | None = None,
     stream: bool = False,
-) -> ReadFileResult:
+) -> Any:
     """
     Parses any document and returns its contents.
     Supported: PDF, DOCX, XLSX, TXT, MD, CSV, HTML.
@@ -185,7 +184,11 @@ async def read_file(
     from src.tools.read_file import _read_file
 
     fmt = OutputFormat(output_format.lower())
-    page_range_tuple = tuple(page_range) if page_range is not None else None
+    page_range_tuple: tuple[int, int] | None = None
+    if page_range is not None:
+        if len(page_range) != 2:
+            raise ValueError("page_range must contain exactly two integers")
+        page_range_tuple = (page_range[0], page_range[1])
     return await _read_file(
         path,
         output_format=fmt,
