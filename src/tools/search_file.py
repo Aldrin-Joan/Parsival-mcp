@@ -1,82 +1,105 @@
 import re
-from pathlib import Path
-from typing import List, Optional
-
+from typing import List, Dict, Any
 from rank_bm25 import BM25Okapi
 
 from src.core.router import FormatRouter
 from src.parsers.registry import get_parser
 from src.models.tool_responses import SearchHit
 from src.models.enums import OutputFormat
+from src.core.security import validate_safe_path
+from src.core.logging import get_logger
 
-_INDEX_CACHE = {}
+logger = get_logger(__name__)
+
+# In-memory index cache: {path: {mtime: float, bm25: BM25, sections: List}}
+_INDEX_CACHE: Dict[str, Any] = {}
 
 
 def _tokenize(text: str) -> List[str]:
+    """Tokenizes text for BM25 ranking."""
     cleaned = re.sub(r"[^\w\s]", " ", text.lower())
-    return [token for token in cleaned.split() if token]
+    return [t for t in cleaned.split() if t]
 
 
-async def search_file(path: str, query: str, top_k: int = 5):
-    if not query or not query.strip():
-        raise ValueError('Query must not be empty')
-
-    source = Path(path)
-    if not source.exists():
-        raise FileNotFoundError(f'File not found: {path}')
-
+async def _get_or_create_index(path: str) -> Dict[str, Any]:
+    """Retrieves or builds the BM25 index for a file."""
     from src.app import get_cache
+    safe_path = validate_safe_path(path)
+    mtime = safe_path.stat().st_mtime
 
-    fmt = FormatRouter().detect(path)
-    parser = get_parser(fmt)
+    if path in _INDEX_CACHE and _INDEX_CACHE[path]["mtime"] == mtime:
+        return _INDEX_CACHE[path]
 
+    # Build index
+    logger.info("search_indexing_start", path=path)
     cache = get_cache()
-    options = {'output_format': OutputFormat.MARKDOWN.value, 'stream': False}
-    cache_key = cache.make_cache_key(path, options)
-    cached_result = await cache.get(cache_key)
+    opts = {"output_format": OutputFormat.MARKDOWN.value}
+    key = cache.make_cache_key(path, opts)
+    res = await cache.get(key)
 
-    if cached_result:
-        parse_result = cached_result
-    else:
-        parse_result = await parser.parse(source)
-        # Store result in cache for future calls
-        await cache.set(cache_key, parse_result)
+    if not res:
+        fmt = FormatRouter().detect(str(safe_path))
+        res = await get_parser(fmt).parse(safe_path)
+        await cache.set(key, res)
 
-    cache_entry = _INDEX_CACHE.get(path)
-    file_mtime = source.stat().st_mtime
+    sections = [s for s in res.sections if s.content]
+    docs = [_tokenize(s.content) for s in sections]
+    bm25 = BM25Okapi(docs) if docs else None
 
-    if cache_entry is None or cache_entry['mtime'] != file_mtime:
-        sections = [s for s in parse_result.sections if s.content]
-        documents = [_tokenize(s.content) for s in sections]
-        bm25 = BM25Okapi(documents) if documents else None
-        _INDEX_CACHE[path] = {
-            'mtime': file_mtime,
-            'sections': sections,
-            'bm25': bm25,
-            'documents': documents,
-        }
-    else:
-        sections = cache_entry['sections']
-        bm25 = cache_entry['bm25']
+    _INDEX_CACHE[path] = {"mtime": mtime, "sections": sections, "bm25": bm25}
+    return _INDEX_CACHE[path]
 
-    if bm25 is None or not sections:
+
+def _format_search_hits(
+    query_tokens: List[str],
+    sections: List[Any],
+    scores: Any,
+    top_k: int
+) -> List[SearchHit]:
+    """Sorts and formats the top search hits."""
+    top_ids = sorted(
+        range(len(scores)),
+        key=lambda i: scores[i],
+        reverse=True
+    )[:top_k]
+
+    hits = []
+    for i in top_ids:
+        sec = sections[i]
+        score = max(0.0, float(scores[i]))
+        if score <= 0:
+            continue
+
+        snippet = sec.content[:200]
+        offset = sec.content.lower().find(query_tokens[0])
+        hits.append(SearchHit(
+            section_index=sec.index,
+            page=sec.page,
+            snippet=snippet,
+            score=score,
+            offset=max(0, offset)
+        ))
+    return hits
+
+
+async def search_file(path: str, query: str, top_k: int = 5) -> List[SearchHit]:
+    """
+    Performs BM25 semantic search across a document's sections.
+    """
+    if not query.strip():
+        raise ValueError("Empty query")
+
+    index_data = await _get_or_create_index(path)
+    bm25, sections = index_data["bm25"], index_data["sections"]
+
+    if not bm25 or not sections:
         return []
 
-    query_tokens = _tokenize(query)
-    if not query_tokens:
-        raise ValueError('Query tokenization produced empty tokens')
+    tokens = _tokenize(query)
+    if not tokens:
+        return []
 
-    scores = bm25.get_scores(query_tokens)
-    top_indexes = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+    scores = bm25.get_scores(tokens)
+    return _format_search_hits(tokens, sections, scores, top_k)
 
-    results: List[SearchHit] = []
-    for i in top_indexes:
-        section = sections[i]
-        snippet = section.content[:200]
-        offset = section.content.lower().find(query_tokens[0])
-        score_val = float(scores[i])
-        # Normalize to non-negative for user-facing relevance
-        score_val = max(0.0, score_val)
-        results.append(SearchHit(section_index=section.index, page=section.page, snippet=snippet, score=score_val, offset=offset if offset >= 0 else 0))
 
-    return results

@@ -21,5 +21,8 @@ class Settings(BaseSettings):
     MAX_LIBREOFFICE_WORKERS: int = 2
     SUBPROCESS_TIMEOUT_SEC: int = 30
 
+    ALLOWED_DIRECTORIES: list[str] = ["."]
+    WORKSPACE_ROOT: str = "."
+
 
 settings = Settings()

@@ -11,7 +11,7 @@ __pycache__/
 env/
 venv/
 *.env
-
+htmlcov
 # IDEs
 .vscode/
 .idea/
