@@ -132,6 +132,30 @@ class TextParser(BaseParser):
         encoding = _detect_encoding(raw_bytes)
         text = raw_bytes.decode(encoding, errors="replace")
 
+        page_range_opt = None
+        if options is not None:
+            page_range_opt = options.get("page_range")
+
+        lines = text.splitlines()
+
+        if page_range_opt:
+            start, end = page_range_opt
+            if start < 1 or end < start:
+                return ParseResult(
+                    status=ParseStatus.FAILED,
+                    metadata=DocumentMetadata(source_path=str(source), file_format=FileFormat.TEXT, file_size_bytes=source.stat().st_size),
+                    sections=[],
+                    images=[],
+                    tables=[],
+                    errors=[ParseError(code="invalid_argument", message="page_range must be [start,end] with 1<=start<=end", recoverable=False)],
+                    raw_text="",
+                    cache_hit=False,
+                    request_id="",
+                )
+            # Text has no real pages; interpret as line range
+            lines = lines[start - 1 : end]
+            text = "\n".join(lines)
+
         is_markdown = source.suffix.lower() in (".md", ".markdown")
 
         sections: list[Section] = []

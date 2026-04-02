@@ -81,6 +81,7 @@ class ContentHashStore:
             "fmt": options.get("output_format"),
             "page_range": options.get("page_range"),
             "include_images": options.get("include_images"),
+            "max_tokens_hint": options.get("max_tokens_hint"),
             "max_dimension": options.get("max_dimension"),
         }
         opts_bytes = str(sorted(opts.items())).encode("utf-8")

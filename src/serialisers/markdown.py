@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.models.parse_result import ParseResult
 from src.models.table import TableResult
 from src.models.enums import SectionType
@@ -32,17 +34,43 @@ def to_gfm_table(table: TableResult) -> str:
     return "\n".join(lines)
 
 
+def _yaml_scalar(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace('"', '\\"')
+        return f'"{escaped}"'
+    return f'"{str(value)}"'
+
+
 class MarkdownSerializer:
     @staticmethod
     def serialize(result: ParseResult) -> str:
         meta = result.metadata
-        front_matter = ["---"]
-        for field in ["title", "author", "source_path", "file_format", "page_count", "table_count", "image_count"]:
-            value = getattr(meta, field, None)
+
+        lines: list[str] = ["---"]
+
+        front_matter = [
+            ("title", meta.title),
+            ("author", meta.author),
+            ("source", getattr(meta, "source_path", None)),
+            ("format", getattr(meta, "file_format", None)),
+            ("pages", getattr(meta, "page_count", None)),
+        ]
+
+        for key, value in front_matter:
             if value is not None:
-                front_matter.append(f"{field}: {value}")
-        front_matter.append("generated_at: null")
-        front_matter.append("---\n")
+                lines.append(f"{key}: {_yaml_scalar(value)}")
+
+        generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        lines.append(f"generated_at: {_yaml_scalar(generated_at)}")
+
+        lines.append("---")
+        lines.append("")
 
         body_lines: list[str] = []
         for section in result.sections:
@@ -52,6 +80,8 @@ class MarkdownSerializer:
             elif section.type == SectionType.PARAGRAPH:
                 body_lines.append(section.content)
             elif section.type == SectionType.TABLE and section.table is not None:
+                if section.table.confidence < 0.6:
+                    body_lines.append(f"<!-- low-confidence table (score: {section.table.confidence:.2f}) -->")
                 body_lines.append(to_gfm_table(section.table))
             elif section.type == SectionType.IMAGE and section.images:
                 img = section.images[0]
@@ -63,5 +93,5 @@ class MarkdownSerializer:
         for err in result.errors:
             body_lines.append(f"<!-- parse_error: {err.code} {err.message} -->")
 
-        output = "\n".join(front_matter + body_lines).rstrip() + "\n"
+        output = "\n".join(lines + body_lines).rstrip() + "\n"
         return output

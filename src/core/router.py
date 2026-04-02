@@ -57,19 +57,45 @@ class FormatRouter:
             return MIME_TO_FORMAT[mime]
 
         ext = file_path.suffix.lower()
-        if ext in EXTENSION_TO_FORMAT:
-            return EXTENSION_TO_FORMAT[ext]
+        ext_fmt = EXTENSION_TO_FORMAT.get(ext)
 
         try:
-            text = file_path.read_bytes()[:1024]
-            if text.startswith(b"%PDF"):
+            raw = file_path.read_bytes()[:4096]
+
+            if raw.startswith(b"%PDF"):
                 return FileFormat.PDF
-            if b"<html" in text.lower():
+            if b"<html" in raw.lower():
                 return FileFormat.HTML
-            if b"," in text and b"\n" in text:
+
+            # For files with explicit non-text extension, trust the extension first,
+            # but allow markdown/csv content override for text-like extensions as needed.
+            if ext_fmt and ext_fmt not in (FileFormat.TEXT, FileFormat.MARKDOWN, FileFormat.CSV):
+                return ext_fmt
+
+            content_csv = b"," in raw and b"\n" in raw
+            content_markdown = raw.strip().startswith(b"#") or b"\n#" in raw
+
+            if content_csv:
                 return FileFormat.CSV
-            if text.strip().startswith(b"#") or b"\n#" in text:
+            if content_markdown:
                 return FileFormat.MARKDOWN
-            return FileFormat.TEXT
+
+            if ext_fmt:
+                return ext_fmt
+
+            if b"\x00" in raw:
+                raise UnsupportedFormatError(path)
+
+            # Determine likely text; non-printables (excluding common whitespace) indicate binary
+            non_printables = sum(1 for b in raw if b < 0x09 or (0x0A < b < 0x20) or b == 0x7F)
+            if raw and (non_printables / len(raw)) > 0.30:
+                raise UnsupportedFormatError(path)
+
+            if ext == "":
+                return FileFormat.TEXT
+
+            raise UnsupportedFormatError(path)
+        except UnsupportedFormatError:
+            raise
         except Exception:
             raise UnsupportedFormatError(path)

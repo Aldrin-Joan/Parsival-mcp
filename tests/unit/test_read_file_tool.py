@@ -3,7 +3,7 @@ import tempfile
 import docx
 import fitz
 from src.tools.read_file import _read_file
-from src.models.enums import OutputFormat
+from src.models.enums import OutputFormat, ParseStatus
 
 
 def make_docx_file():
@@ -54,6 +54,81 @@ async def test_read_file_tool_text_output_docx():
         assert "World" in result.content
     finally:
         os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_read_file_tool_plain_text_no_ext(tmp_path):
+    path = tmp_path / "plain"
+    path.write_text("Hello plain text", encoding="utf-8")
+
+    result = await _read_file(str(path), output_format=OutputFormat.MARKDOWN, stream=False)
+    assert result.status.name == "OK"
+    assert "Hello plain text" in result.content
+
+
+@pytest.mark.asyncio
+async def test_read_file_tool_unsupported_format(tmp_path):
+    path = tmp_path / "binary"
+    path.write_bytes(b"\x00\x00\x01\x02")
+
+    result = await _read_file(str(path), output_format=OutputFormat.MARKDOWN, stream=False)
+    assert result.status.name == "UNSUPPORTED"
+    assert result.content == ""
+    assert len(result.errors) == 1
+    assert result.errors[0].code == "unsupported_format"
+
+
+@pytest.mark.asyncio
+async def test_read_file_tool_extension_content_mismatch(tmp_path):
+    path = tmp_path / "trick.txt"
+    path.write_bytes(b"%PDF-1.4\n%Dummy")
+
+    result = await _read_file(str(path), output_format=OutputFormat.MARKDOWN, stream=False)
+    assert result.metadata.file_format in ("pdf", "PDF")
+    # Parser may fail or succeed depending on PDF validity in binary payload.
+    assert result.status in (ParseStatus.OK, ParseStatus.PARTIAL, ParseStatus.FAILED)
+
+
+def test_read_file_tool_schema_includes_new_options():
+    import inspect
+    from src.tools.read_file import _read_file
+
+    params = inspect.signature(_read_file).parameters
+    assert "page_range" in params
+    assert "include_images" in params
+    assert "max_tokens_hint" in params
+
+
+@pytest.mark.asyncio
+async def test_read_file_tool_invalid_page_range(tmp_path):
+    path = tmp_path / "plain.txt"
+    path.write_text("This is line1\nThis is line2\n")
+
+    result = await _read_file(str(path), output_format=OutputFormat.TEXT, page_range=(2, 1), stream=False)
+    assert result.status.name == "FAILED"
+    assert result.errors[0].code == "invalid_argument"
+
+
+@pytest.mark.asyncio
+async def test_read_file_tool_page_range_text(tmp_path):
+    path = tmp_path / "plain.txt"
+    path.write_text("Line1\nLine2\nLine3\n")
+
+    result = await _read_file(str(path), output_format=OutputFormat.TEXT, page_range=(2, 3), stream=False)
+    assert result.status.name == "OK"
+    assert "Line1" not in result.content
+    assert "Line2" in result.content
+
+
+@pytest.mark.asyncio
+async def test_read_file_tool_max_tokens_hint(tmp_path):
+    path = tmp_path / "plain.txt"
+    path.write_text("one two three four five")
+
+    result = await _read_file(str(path), output_format=OutputFormat.TEXT, max_tokens_hint=3, stream=False)
+    assert result.status == ParseStatus.PARTIAL
+    assert result.content.split() == ["one", "two", "three"]
+    assert any(err.code == "max_tokens_hint_reached" for err in result.errors)
 
 
 @pytest.mark.asyncio

@@ -8,12 +8,13 @@ from src.serialisers.markdown import MarkdownSerializer
 from src.serialisers.json_serializer import JSONSerializer
 from src.serialisers.text_serializer import TextSerializer
 from src.parsers.registry import get_parser
-from src.core.router import FormatRouter
+from src.core.router import FormatRouter, UnsupportedFormatError
 from src.core.cache import ContentHashStore
 from src.core.executor import run_parse_in_pool
-from src.models.enums import OutputFormat
+from src.models.enums import FileFormat, OutputFormat, ParseStatus
 from src.models.tool_responses import ReadFileResult, SearchHit
 from src.models.metadata import DocumentMetadata
+from src.models.parse_result import ParseResult, ParseError
 from src.models.table import TableResult
 from src.models.image import ImageRef
 
@@ -42,16 +43,58 @@ def get_cache():
     return cache_store
 
 
-async def parse_file(path: str, output_format: OutputFormat = OutputFormat.MARKDOWN, stream: bool = False):
+async def parse_file(
+    path: str,
+    output_format: OutputFormat = OutputFormat.MARKDOWN,
+    page_range: tuple[int, int] | None = None,
+    include_images: bool = True,
+    max_tokens_hint: int | None = None,
+    stream: bool = False,
+):
     """Core parsing orchestration logic."""
     try:
         await _startup()
     except Exception as exc:
         logger.warning("startup_initialization_failed", error=str(exc))
 
-    fmt = FormatRouter().detect(path)
+    file_path = Path(path)
+    pre_stat = file_path.stat()
+
+    try:
+        fmt = FormatRouter().detect(path)
+    except UnsupportedFormatError as exc:
+        metadata = DocumentMetadata(
+            source_path=str(path),
+            file_format=FileFormat.UNKNOWN,
+            file_size_bytes=pre_stat.st_size,
+            section_count=0,
+            table_count=0,
+            image_count=0,
+            has_toc=False,
+            toc=[],
+            parse_duration_ms=0.0,
+            parser_version="",
+        )
+        return ParseResult(
+            status=ParseStatus.UNSUPPORTED,
+            metadata=metadata,
+            sections=[],
+            images=[],
+            tables=[],
+            errors=[ParseError(code="unsupported_format", message=str(exc), recoverable=False)],
+            raw_text="",
+            cache_hit=False,
+            request_id="",
+        )
+
     parser = get_parser(fmt)
-    opts = {"output_format": output_format.value, "stream": stream}
+    opts = {
+        "output_format": output_format.value,
+        "stream": stream,
+        "page_range": page_range,
+        "include_images": include_images,
+        "max_tokens_hint": max_tokens_hint,
+    }
     key = cache_store.make_cache_key(path, opts)
 
     if not stream:
@@ -62,10 +105,50 @@ async def parse_file(path: str, output_format: OutputFormat = OutputFormat.MARKD
             return hit
 
     if stream:
-        return parser.stream_chunks(Path(path), options=opts)
+        return parser.stream_chunks(file_path, options=opts)
 
     res = await run_parse_in_pool(path, options=opts)
     res = PostProcessingPipeline.run(res)
+
+    # Apply token hint post hoc (soft limit)
+    if max_tokens_hint is not None and max_tokens_hint > 0 and res.raw_text:
+        tokens = res.raw_text.split()
+        if len(tokens) > max_tokens_hint:
+            res.raw_text = " ".join(tokens[:max_tokens_hint])
+            # trim section list to match text budget
+            token_count = 0
+            kept_sections = []
+            from src.models.parse_result import Section
+
+            for sec in res.sections:
+                sec_tokens = sec.content.split()
+                if token_count + len(sec_tokens) <= max_tokens_hint:
+                    kept_sections.append(sec)
+                    token_count += len(sec_tokens)
+                else:
+                    break
+            res.sections = kept_sections
+            res.status = ParseStatus.PARTIAL
+            res.errors.append(
+                ParseError(
+                    code="max_tokens_hint_reached",
+                    message=f"Truncated output to {max_tokens_hint} tokens",
+                    recoverable=True,
+                )
+            )
+
+    post_stat = file_path.stat()
+    if post_stat.st_mtime != pre_stat.st_mtime or post_stat.st_size != pre_stat.st_size:
+        res.errors.append(
+            ParseError(
+                code="file_modified_during_parse",
+                message="File mtime changed during parsing; result may be inconsistent",
+                recoverable=True,
+            )
+        )
+        res.status = ParseStatus.PARTIAL
+        await cache_store.invalidate(key)
+        return res
 
     if not stream:
         await cache_store.set(key, res)
@@ -87,7 +170,14 @@ def serialize_result(result, output_format: OutputFormat) -> str:
 
 
 @mcp.tool()
-async def read_file(path: str, output_format: str = "markdown", stream: bool = False) -> ReadFileResult:
+async def read_file(
+    path: str,
+    output_format: str = "markdown",
+    page_range: list[int] | None = None,
+    include_images: bool = True,
+    max_tokens_hint: int | None = None,
+    stream: bool = False,
+) -> ReadFileResult:
     """
     Parses any document and returns its contents.
     Supported: PDF, DOCX, XLSX, TXT, MD, CSV, HTML.
@@ -95,7 +185,15 @@ async def read_file(path: str, output_format: str = "markdown", stream: bool = F
     from src.tools.read_file import _read_file
 
     fmt = OutputFormat(output_format.lower())
-    return await _read_file(path, output_format=fmt, stream=stream)
+    page_range_tuple = tuple(page_range) if page_range is not None else None
+    return await _read_file(
+        path,
+        output_format=fmt,
+        page_range=page_range_tuple,
+        include_images=include_images,
+        max_tokens_hint=max_tokens_hint,
+        stream=stream,
+    )
 
 
 @mcp.tool()

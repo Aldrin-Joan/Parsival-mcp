@@ -37,6 +37,118 @@ def test_markdown_serializer_basics():
     assert "# Hello" in out
 
 
+def test_markdown_serializer_front_matter_strict_keys():
+    meta = DocumentMetadata(
+        title="Document Title",
+        author="Author Name",
+        source_path="/tmp/f",
+        file_format="pdf",
+        file_size_bytes=123,
+        page_count=2,
+        table_count=1,
+        image_count=0,
+        section_count=1,
+        has_toc=False,
+    )
+    result = ParseResult(
+        status=ParseStatus.OK,
+        metadata=meta,
+        sections=[Section(index=0, type=SectionType.PARAGRAPH, content="Text")],
+        images=[],
+        tables=[],
+        errors=[],
+        raw_text="Text",
+        cache_hit=False,
+        request_id="1",
+    )
+    out = MarkdownSerializer.serialize(result)
+    assert out.startswith("---\n")
+    assert "title: \"Document Title\"" in out
+    assert "author: \"Author Name\"" in out
+    assert "source: \"/tmp/f\"" in out
+    assert "format: \"pdf\"" in out
+    assert "pages: 2" in out
+    assert "generated_at:" in out
+    assert "source_path" not in out
+    assert "file_format" not in out
+
+
+def test_low_confidence_table_comment():
+    table = TableResult(
+        index=0,
+        page=1,
+        headers=["A"],
+        rows=[["1"]],
+        cells=[],
+        row_count=1,
+        col_count=1,
+        has_merged_cells=False,
+        confidence=0.55,
+        confidence_reason="low pattern",
+        markdown="",
+        errors=[],
+    )
+    result = ParseResult(
+        status=ParseStatus.OK,
+        metadata=DocumentMetadata(
+            source_path="/tmp/f",
+            file_format="pdf",
+            file_size_bytes=1,
+            section_count=1,
+            table_count=1,
+            image_count=0,
+            has_toc=False,
+        ),
+        sections=[Section(index=0, type=SectionType.TABLE, content="", table=table)],
+        images=[],
+        tables=[table],
+        errors=[],
+        raw_text="",
+        cache_hit=False,
+        request_id="1",
+    )
+    out = MarkdownSerializer.serialize(result)
+    assert "<!-- low-confidence table (score: 0.55) -->" in out
+
+
+def test_high_confidence_table_no_low_comment():
+    table = TableResult(
+        index=0,
+        page=1,
+        headers=["A"],
+        rows=[["1"]],
+        cells=[],
+        row_count=1,
+        col_count=1,
+        has_merged_cells=False,
+        confidence=0.75,
+        confidence_reason="high",
+        markdown="",
+        errors=[],
+    )
+    result = ParseResult(
+        status=ParseStatus.OK,
+        metadata=DocumentMetadata(
+            source_path="/tmp/f",
+            file_format="pdf",
+            file_size_bytes=1,
+            section_count=1,
+            table_count=1,
+            image_count=0,
+            has_toc=False,
+        ),
+        sections=[Section(index=0, type=SectionType.TABLE, content="", table=table)],
+        images=[],
+        tables=[table],
+        errors=[],
+        raw_text="",
+        cache_hit=False,
+        request_id="1",
+    )
+    out = MarkdownSerializer.serialize(result)
+    assert "<!-- low-confidence table" not in out
+
+
 def test_image_extractor_no_change():
     img = ImageRef(
         index=0,

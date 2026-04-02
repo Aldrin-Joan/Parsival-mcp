@@ -115,7 +115,19 @@ class PDFParser(BaseParser):
         parse_errors: list[ParseError] = []
 
         image_index = 0
+        page_range_opt = None
+        if options is not None:
+            page_range_opt = options.get("page_range")
+        include_images_opt = True
+        if options is not None and "include_images" in options:
+            include_images_opt = bool(options.get("include_images"))
+
+        start_page = page_range_opt[0] if page_range_opt else 1
+        end_page = page_range_opt[1] if page_range_opt else doc.page_count
+
         for page_num in range(doc.page_count):
+            if page_num + 1 < start_page or page_num + 1 > end_page:
+                continue
             page = doc.load_page(page_num)
             page_dict = page.get_text("dict")
 
@@ -163,33 +175,34 @@ class PDFParser(BaseParser):
                 raw_text_chunks.append(block_text)
 
             # Image extraction
-            for img in page.get_images(full=True):
-                xref = img[0]
-                try:
-                    png = doc.extract_image(xref)
-                    img_bytes = png.get("image")
-                    if not img_bytes:
-                        continue
-                    fmt = png.get("ext", "png")
-                    b64 = base64.b64encode(img_bytes).decode("ascii")
-                    image_obj = ImageRef(
-                        index=image_index,
-                        page=page_num + 1,
-                        width_px=png.get("width"),
-                        height_px=png.get("height"),
-                        format=fmt,
-                        size_bytes=len(img_bytes),
-                        base64_data=b64,
-                        description_hint=f"Image {image_index + 1} on page {page_num + 1}",
-                        confidence=1.0,
-                        alt_text=None,
-                    )
-                    images.append(image_obj)
-                    image_index += 1
-                except Exception as exc:
-                    parse_errors.append(
-                        ParseError(code="image_extract_failed", message=str(exc), page=page_num + 1, recoverable=True)
-                    )
+            if include_images_opt:
+                for img in page.get_images(full=True):
+                    xref = img[0]
+                    try:
+                        png = doc.extract_image(xref)
+                        img_bytes = png.get("image")
+                        if not img_bytes:
+                            continue
+                        fmt = png.get("ext", "png")
+                        b64 = base64.b64encode(img_bytes).decode("ascii")
+                        image_obj = ImageRef(
+                            index=image_index,
+                            page=page_num + 1,
+                            width_px=png.get("width"),
+                            height_px=png.get("height"),
+                            format=fmt,
+                            size_bytes=len(img_bytes),
+                            base64_data=b64,
+                            description_hint=f"Image {image_index + 1} on page {page_num + 1}",
+                            confidence=1.0,
+                            alt_text=None,
+                        )
+                        images.append(image_obj)
+                        image_index += 1
+                    except Exception as exc:
+                        parse_errors.append(
+                            ParseError(code="image_extract_failed", message=str(exc), page=page_num + 1, recoverable=True)
+                        )
 
         # Table extraction via pdfplumber
         if pdfplumber is not None:

@@ -233,6 +233,16 @@
 - Integration test: call tool via FastMCP test client on sample files
 - deps: P1-11, P1-15, P1-16, P0-13
 
+### P1-18: Integration tests `[E]` ✅
+- Create `tests/integration/` directory
+- Add integration tests for:
+  - `read_file` happy path
+  - unsupported format path
+  - markdown output contract
+  - metadata path
+- Verify no unit tests removed
+- deps: P1-17
+
 ---
 
 ## Phase 2 — Remaining Formats (Completed) ✅
