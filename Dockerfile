@@ -48,4 +48,4 @@ ENV LIBREOFFICE_MAX_CONCURRENT=2
 
 EXPOSE 8000
 
-CMD ["python", "-m", "fastmcp", "--host", "0.0.0.0", "--port", "8000", "parsival"]
+CMD ["fastmcp", "run", "src/app.py:mcp", "--transport", "sse"]
