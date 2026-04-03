@@ -12,6 +12,9 @@ MIME_TO_FORMAT = {
     "text/csv": FileFormat.CSV,
     "text/html": FileFormat.HTML,
     "text/plain": FileFormat.TEXT,
+    "image/png": FileFormat.IMAGE,
+    "image/jpeg": FileFormat.IMAGE,
+    "image/jpg": FileFormat.IMAGE,
 }
 
 EXTENSION_TO_FORMAT = {
@@ -24,6 +27,9 @@ EXTENSION_TO_FORMAT = {
     ".html": FileFormat.HTML,
     ".htm": FileFormat.HTML,
     ".xml": FileFormat.HTML,
+    ".png": FileFormat.IMAGE,
+    ".jpg": FileFormat.IMAGE,
+    ".jpeg": FileFormat.IMAGE,
     ".txt": FileFormat.TEXT,
     ".md": FileFormat.MARKDOWN,
 }

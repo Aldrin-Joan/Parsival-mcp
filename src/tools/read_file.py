@@ -101,7 +101,8 @@ async def _read_file(
 
     # 3. Serialization & Response
     if result.status == ParseStatus.UNSUPPORTED:
-        content = ""
+        reason = result.errors[0].message if result.errors else "Unsupported file format"
+        content = f"Unsupported: {reason}"
     else:
         content = serialize_result(result, output_format)
 

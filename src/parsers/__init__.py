@@ -9,6 +9,7 @@ from . import (
     pptx_parser,
     html_parser,
     text_parser,
+    image_parser,
 )
 from .plugin_loader import load_plugins
 
@@ -26,4 +27,5 @@ __all__ = [
     "pptx_parser",
     "html_parser",
     "text_parser",
+    "image_parser",
 ]

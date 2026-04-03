@@ -4,6 +4,7 @@ import inspect
 import json
 import logging
 import sys
+import time
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,85 @@ def _to_jsonable(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return _to_jsonable(value.model_dump(mode="json"))
     return str(value)
+
+
+def _to_content_string(value: Any) -> str:
+    jsonable = _to_jsonable(value)
+    if isinstance(jsonable, str):
+        return jsonable
+    return json.dumps(jsonable, sort_keys=True)
+
+
+def _base_response(status: str, content: str, error: str | None, confidence: float) -> dict[str, Any]:
+    return {
+        "status": status,
+        "content": content,
+        "error": error,
+        "confidence": max(0.0, min(1.0, float(confidence))),
+    }
+
+
+def _build_tool_response(name: str, raw_result: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+    jsonable = _to_jsonable(raw_result)
+
+    if name == "read_file" and isinstance(jsonable, dict):
+        parse_status = str(jsonable.get("status", "")).lower()
+        content = (jsonable.get("content") or "")
+        errors = jsonable.get("errors") or []
+        error_message = ""
+        if errors and isinstance(errors, list):
+            first = errors[0]
+            if isinstance(first, dict):
+                error_message = str(first.get("message") or first.get("code") or "")
+            else:
+                error_message = str(first)
+
+        if parse_status == "unsupported":
+            return _base_response("unsupported", content or "Unsupported file format", error_message or "unsupported_format", 0.0)
+        if parse_status in {"failed", "oversize"}:
+            return _base_response("error", content or "", error_message or parse_status, 0.0)
+        if not str(content).strip():
+            return _base_response("error", "", "empty_content", 0.0)
+
+        conf = 0.95 if parse_status == "ok" else 0.7
+        conf = min(1.0, max(0.5, conf + min(len(str(content)) / 5000.0, 0.25)))
+        return _base_response("success", str(content), None, conf)
+
+    if name == "convert_to_markdown":
+        content = _to_content_string(jsonable).strip()
+        if not content:
+            return _base_response("error", "", "empty_content", 0.0)
+        return _base_response("success", content, None, min(1.0, 0.7 + min(len(content) / 5000.0, 0.3)))
+
+    if name == "extract_table" and isinstance(jsonable, dict):
+        row_count = int(jsonable.get("row_count") or 0)
+        markdown = str(jsonable.get("markdown") or "")
+        if row_count < 2:
+            return _base_response("error", "", "no_table_found", 0.0)
+        content = markdown.strip() or _to_content_string(jsonable)
+        return _base_response("success", content, None, 0.85)
+
+    if name == "search_file" and isinstance(jsonable, list):
+        if not jsonable:
+            return _base_response("error", "", "no_results", 0.0)
+
+        query = str(arguments.get("query") or "").lower().strip()
+        confidences = []
+        for hit in jsonable:
+            if isinstance(hit, dict):
+                conf = float(hit.get("confidence") or 0.0)
+                snippet = str(hit.get("snippet") or "").lower()
+                if query and query not in snippet:
+                    conf = max(0.0, conf - 0.5)
+                confidences.append(conf)
+
+        overall = sum(confidences) / len(confidences) if confidences else 0.0
+        return _base_response("success", _to_content_string(jsonable), None, overall)
+
+    content = _to_content_string(jsonable)
+    if not content.strip():
+        return _base_response("error", "", "empty_content", 0.0)
+    return _base_response("success", content, None, min(1.0, 0.6 + min(len(content) / 10000.0, 0.4)))
 
 
 TOOL_DEFINITIONS = {
@@ -152,19 +232,49 @@ async def _list_tools() -> list[Tool]:
 
 @server.call_tool(validate_input=True)
 async def _call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
+    start = time.perf_counter()
+    file_arg = str((arguments or {}).get("path") or (arguments or {}).get("file") or "")
+
     tool_fn = app_module.TOOL_FUNCTIONS.get(name)
     if tool_fn is None:
-        raise ValueError(f"Unknown tool: {name}")
+        payload = _base_response("error", "", f"Unknown tool: {name}", 0.0)
+        text = json.dumps(payload, indent=2, sort_keys=True)
+        logger.info(
+            "tool_call",
+            tool=name,
+            file=file_arg,
+            status="error",
+            error_type="unknown_tool",
+            latency_ms=(time.perf_counter() - start) * 1000,
+        )
+        return [types.TextContent(type="text", text=text)]
 
-    result = tool_fn(**(arguments or {}))
-    if inspect.isawaitable(result):
-        result = await result
+    try:
+        result = tool_fn(**(arguments or {}))
+        if inspect.isawaitable(result):
+            result = await result
 
-    payload = _to_jsonable(result)
-    if isinstance(payload, str):
-        text = payload
-    else:
-        text = json.dumps(payload, indent=2)
+        payload = _build_tool_response(name, result, arguments or {})
+        text = json.dumps(payload, indent=2, sort_keys=True)
+        logger.info(
+            "tool_call",
+            tool=name,
+            file=file_arg,
+            status=payload.get("status"),
+            error_type=payload.get("error") or "",
+            latency_ms=(time.perf_counter() - start) * 1000,
+        )
+    except Exception as exc:
+        payload = _base_response("error", "", str(exc), 0.0)
+        text = json.dumps(payload, indent=2, sort_keys=True)
+        logger.warning(
+            "tool_call",
+            tool=name,
+            file=file_arg,
+            status="error",
+            error_type=type(exc).__name__,
+            latency_ms=(time.perf_counter() - start) * 1000,
+        )
 
     return [types.TextContent(type="text", text=text)]
 

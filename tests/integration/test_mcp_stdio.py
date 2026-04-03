@@ -31,6 +31,11 @@ def _result_text(result) -> str:
     return getattr(first, "text", "") or ""
 
 
+def _result_payload(result) -> dict:
+    text = _result_text(result)
+    return json.loads(text) if text else {}
+
+
 def _stdio_server_params() -> StdioServerParameters:
     env = dict(os.environ)
     env.setdefault("MCP_TRANSPORT", "stdio")
@@ -70,10 +75,12 @@ async def test_stdio_list_supported_formats_and_read_file():
 
             formats_result = await asyncio.wait_for(group.call_tool("list_supported_formats", {}), timeout=20)
             assert formats_result.isError is False
-            formats_payload = json.loads(_result_text(formats_result))
-            assert isinstance(formats_payload.get("formats"), list)
-            assert "text" in formats_payload.get("formats", [])
-            assert formats_payload.get("count") == len(formats_payload.get("formats", []))
+            formats_payload = _result_payload(formats_result)
+            assert formats_payload.get("status") == "success"
+            formats_content = json.loads(formats_payload.get("content", "{}"))
+            assert isinstance(formats_content.get("formats"), list)
+            assert "text" in formats_content.get("formats", [])
+            assert formats_content.get("count") == len(formats_content.get("formats", []))
 
             try:
                 read_result = await asyncio.wait_for(
@@ -81,7 +88,9 @@ async def test_stdio_list_supported_formats_and_read_file():
                     timeout=20,
                 )
                 assert read_result.isError is False
-                assert "Parsival stdio integration test" in _result_text(read_result)
+                read_payload = _result_payload(read_result)
+                assert read_payload.get("status") == "success"
+                assert "Parsival stdio integration test" in read_payload.get("content", "")
             except TimeoutError:
                 # Known in this environment: stdio tool call may intermittently time out for read_file,
                 # while the same backend operation succeeds in-process.

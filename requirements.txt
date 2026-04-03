@@ -20,6 +20,7 @@ markdown-it-py
 
 # --- Images ---
 Pillow>=10.3.0
+pytesseract>=0.3.10
 
 # --- Cache ---
 cachetools>=5.3.0

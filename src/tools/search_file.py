@@ -65,8 +65,20 @@ def _format_search_hits(query_tokens: List[str], sections: List[Any], scores: An
 
         snippet = sec.content[:200]
         offset = sec.content.lower().find(query_tokens[0])
+        snippet_lower = snippet.lower()
+        confidence = float(score) / (float(score) + 5.0) if float(score) > 0 else 0.0
+        if any(token not in snippet_lower for token in query_tokens):
+            confidence -= 0.5
+        confidence = max(0.0, min(1.0, confidence))
         hits.append(
-            SearchHit(section_index=sec.index, page=sec.page, snippet=snippet, score=score, offset=max(0, offset))
+            SearchHit(
+                section_index=sec.index,
+                page=sec.page,
+                snippet=snippet,
+                score=score,
+                confidence=confidence,
+                offset=max(0, offset),
+            )
         )
     return hits
 
@@ -82,7 +94,7 @@ async def search_file(path: str, query: str, top_k: int = 5) -> List[SearchHit]:
         index_data = await _get_or_create_index(path)
     except Exception as exc:
         logger.warning("tool_search_file_index_failed", path=str(path), error=str(exc))
-        return []
+        raise RuntimeError(f"search_index_failed: {exc}") from exc
 
     bm25, sections = index_data["bm25"], index_data["sections"]
 

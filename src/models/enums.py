@@ -9,6 +9,7 @@ class FileFormat(str, Enum):
     XLSX = "xlsx"
     CSV = "csv"
     HTML = "html"
+    IMAGE = "image"
     MARKDOWN = "markdown"
     TEXT = "text"
     UNKNOWN = "unknown"

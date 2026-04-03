@@ -65,6 +65,9 @@ from src.models.parse_result import ParseResult, ParseError, Section
 from src.models.table import TableResult, TableCell
 from src.parsers.base import BaseParser
 from src.parsers.registry import register
+from src.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @register(FileFormat.XLSX)
@@ -237,44 +240,71 @@ class XlsxParser(BaseParser):
 
         table_index = 0
         for sheet_idx, sheet_name in enumerate(wb.sheetnames):
-            ws = wb[sheet_name]
-            rows = []
-            merged_map = {cell.coordinate: cell for merged in ws.merged_cells.ranges for cell in ws[merged.coord]}
+            try:
+                ws = wb[sheet_name]
+                rows = []
+                merged_map = {}
+                for merged in ws.merged_cells.ranges:
+                    merged_cells = ws[merged.coord]
+                    for row_cells in merged_cells:
+                        if isinstance(row_cells, tuple):
+                            iter_cells = row_cells
+                        else:
+                            iter_cells = (row_cells,)
+                        for cell in iter_cells:
+                            if hasattr(cell, "coordinate"):
+                                merged_map[cell.coordinate] = cell
 
-            for row in ws.iter_rows(values_only=True):
-                rows.append([str(c) if c is not None else "" for c in row])
+                for row in ws.iter_rows(values_only=True):
+                    rows.append([str(c) if c is not None else "" for c in row])
 
-            if not rows:
-                continue
+                if not rows:
+                    continue
 
-            headers = rows[0]
-            body_rows = rows[1:]
-            cells = []
-            for ri, row in enumerate(rows):
-                for ci, val in enumerate(row):
-                    cells.append(
-                        TableCell(
-                            row=ri, col=ci, value=str(val), raw_value=val, colspan=1, rowspan=1, is_header=(ri == 0)
+                headers = rows[0]
+                body_rows = rows[1:]
+                cells = []
+                for ri, row in enumerate(rows):
+                    for ci, val in enumerate(row):
+                        cells.append(
+                            TableCell(
+                                row=ri,
+                                col=ci,
+                                value=str(val),
+                                raw_value=val,
+                                colspan=1,
+                                rowspan=1,
+                                is_header=(ri == 0),
+                            )
                         )
-                    )
 
-            table_obj = TableResult(
-                index=table_index,
-                page=sheet_idx + 1,
-                caption=sheet_name,
-                headers=headers,
-                rows=body_rows,
-                cells=cells,
-                row_count=len(body_rows),
-                col_count=len(headers),
-                has_merged_cells=bool(ws.merged_cells),
-                confidence=0.9,
-                confidence_reason="openpyxl xlsx",
-                markdown="",
-                errors=[],
-            )
-            tables.append(table_obj)
-            table_index += 1
+                table_obj = TableResult(
+                    index=table_index,
+                    page=sheet_idx + 1,
+                    caption=sheet_name,
+                    headers=headers,
+                    rows=body_rows,
+                    cells=cells,
+                    row_count=len(body_rows),
+                    col_count=len(headers),
+                    has_merged_cells=bool(ws.merged_cells),
+                    confidence=0.9,
+                    confidence_reason="openpyxl xlsx",
+                    markdown="",
+                    errors=[],
+                )
+                tables.append(table_obj)
+                table_index += 1
+            except Exception as exc:
+                logger.warning("xlsx_sheet_parse_skipped", sheet=sheet_name, error=str(exc))
+                errors.append(
+                    ParseError(
+                        code="xlsx_sheet_parse_error",
+                        message=f"Sheet '{sheet_name}' skipped: {exc}",
+                        recoverable=True,
+                    )
+                )
+                continue
 
         total_text = []
         for table in tables:
@@ -299,7 +329,7 @@ class XlsxParser(BaseParser):
 
         wb.close()
         return ParseResult(
-            status=ParseStatus.OK if tables else ParseStatus.PARTIAL,
+            status=ParseStatus.OK if tables and not errors else (ParseStatus.PARTIAL if tables else ParseStatus.FAILED),
             metadata=metadata,
             sections=sections,
             images=[],

@@ -16,11 +16,13 @@ def make_docx_with_table(tmp_path: Path) -> Path:
 
     path = tmp_path / "table.docx"
     doc = Document()
-    table = doc.add_table(rows=2, cols=2)
+    table = doc.add_table(rows=3, cols=2)
     table.cell(0, 0).text = "H1"
     table.cell(0, 1).text = "H2"
     table.cell(1, 0).text = "A1"
     table.cell(1, 1).text = "B1"
+    table.cell(2, 0).text = "A2"
+    table.cell(2, 1).text = "B2"
     doc.save(path)
     return path
 
@@ -34,6 +36,7 @@ def make_xlsx_with_table(tmp_path: Path) -> Path:
     ws.title = "Sheet1"
     ws.append(["H1", "H2"])
     ws.append(["A1", "B1"])
+    ws.append(["A2", "B2"])
     wb.save(path)
     return path
 
@@ -104,7 +107,7 @@ async def test_extract_table_pdf(tmp_path):
     pdf_path = make_pdf_with_table(tmp_path)
     try:
         tbl = await extract_table(str(pdf_path), table_index=1)
-    except IndexError:
+    except (IndexError, ValueError):
         pytest.skip("PDF table extraction format not reliable for synthetic sample")
     assert tbl.col_count >= 1
-    assert tbl.row_count >= 1
+    assert tbl.row_count >= 2

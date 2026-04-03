@@ -47,26 +47,6 @@ async def extract_table(path: str, table_index: int = 1, sheet_name: Optional[st
         tables = [tbl for tbl in tables if tbl.caption == sheet_name]
 
     if not tables:
-        # Recover from corrupted or unsupported table rows with a placeholder to keep pipeline robust.
-        if getattr(result, "status", None) in ("failed", "partial", "unsupported"):
-            fallback = TableResult(
-                index=0,
-                page=None,
-                caption="fallback_table",
-                headers=["row"],
-                rows=[["no-extractable-table"]],
-                cells=[],
-                row_count=1,
-                col_count=1,
-                has_merged_cells=False,
-                confidence=0.0,
-                confidence_reason="fallback due to missing tables",
-                markdown="| row |\n| --- |\n| no-extractable-table |",
-                errors=["table_extraction_fallback"],
-            )
-            logger.warning("tool_extract_table_fallback", path=str(safe_path))
-            return fallback
-
         logger.warning("tool_extract_table_none", path=str(safe_path))
         raise IndexError("No tables found for given filter")
 
@@ -75,6 +55,9 @@ async def extract_table(path: str, table_index: int = 1, sheet_name: Optional[st
         raise IndexError(f"table_index {table_index} out of range (1..{len(tables)})")
 
     table = tables[idx]
+    if table.row_count < 2:
+        logger.warning("tool_extract_table_too_small", path=str(safe_path), rows=table.row_count)
+        raise ValueError("no_table_found")
     table.markdown = _to_gfm(table)
 
     logger.info("tool_extract_table_complete", path=str(safe_path), rows=table.row_count)

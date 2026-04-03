@@ -6,6 +6,7 @@ from typing import Optional
 import base64
 
 import fitz  # PyMuPDF
+from PIL import Image
 
 try:
     import pdfplumber
@@ -18,6 +19,7 @@ from src.models.parse_result import ParseResult, ParseError, Section
 from src.models.table import TableResult, TableCell
 from src.models.image import ImageRef
 from src.parsers.base import BaseParser
+from src.parsers.ocr import ocr_text_from_pil
 from src.parsers.registry import register
 from src.parsers.utils import FileOversizeError, normalize_text, enforce_file_size
 
@@ -263,6 +265,55 @@ class PDFParser(BaseParser):
             # no pdfplumber installed; table extraction unavailable
             pass
 
+        # OCR fallback for scanned PDFs or documents without text layer.
+        if not any((s.content or "").strip() for s in sections):
+            ocr_sections: list[Section] = []
+            for page_num in range(doc.page_count):
+                if page_num + 1 < start_page or page_num + 1 > end_page:
+                    continue
+                try:
+                    page = doc.load_page(page_num)
+                    pix = page.get_pixmap(dpi=200)
+                    mode = "RGBA" if pix.alpha else "RGB"
+                    image = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+                    text, ocr_error = ocr_text_from_pil(image)
+                    if ocr_error:
+                        parse_errors.append(
+                            ParseError(
+                                code="ocr_page_failed",
+                                message=f"page {page_num + 1}: {ocr_error}",
+                                page=page_num + 1,
+                                recoverable=True,
+                            )
+                        )
+                        continue
+
+                    cleaned_text = normalize_text(text)
+                    if cleaned_text:
+                        ocr_sections.append(
+                            Section(
+                                index=len(sections) + len(ocr_sections),
+                                type=SectionType.PARAGRAPH,
+                                content=cleaned_text,
+                                page=page_num + 1,
+                                metadata={"source": "ocr"},
+                                confidence=0.7,
+                            )
+                        )
+                        raw_text_chunks.append(cleaned_text)
+                except Exception as exc:
+                    parse_errors.append(
+                        ParseError(
+                            code="ocr_page_exception",
+                            message=str(exc),
+                            page=page_num + 1,
+                            recoverable=True,
+                        )
+                    )
+
+            if ocr_sections:
+                sections.extend(ocr_sections)
+
         metadata = DocumentMetadata(
             source_path=str(src),
             file_format=FileFormat.PDF,
@@ -280,8 +331,12 @@ class PDFParser(BaseParser):
             parser_version=getattr(fitz, "__version__", "n/a"),
         )
 
+        result_status = ParseStatus.OK
+        if parse_errors:
+            result_status = ParseStatus.PARTIAL if (sections or tables or images) else ParseStatus.FAILED
+
         result = ParseResult(
-            status=ParseStatus.OK,
+            status=result_status,
             metadata=metadata,
             sections=sections,
             images=images,

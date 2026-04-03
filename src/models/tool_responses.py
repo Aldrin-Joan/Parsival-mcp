@@ -29,4 +29,5 @@ class SearchHit(BaseModel):
     page: int | None
     snippet: str
     score: float
+    confidence: float = 0.0
     offset: int

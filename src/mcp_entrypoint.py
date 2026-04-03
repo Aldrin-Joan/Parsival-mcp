@@ -1,6 +1,7 @@
 from src.app import logger
 from src.config import settings
 from src.mcp_stdio import main as run_stdio_main
+import multiprocessing
 
 
 def main() -> None:
@@ -14,4 +15,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()
